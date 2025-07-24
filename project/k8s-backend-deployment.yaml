@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: backend:local
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: backend-secret
+        volumeMounts:
+        - name: backend-data
+          mountPath: /app/data
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: backend-data
+        persistentVolumeClaim:
+          claimName: backend-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP 

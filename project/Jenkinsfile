@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'your-dockerhub-username' // Change this to your Docker Hub or other registry
+        BACKEND_IMAGE = "${DOCKER_REGISTRY}/backend:${BUILD_NUMBER}"
+        FRONTEND_IMAGE = "${DOCKER_REGISTRY}/frontend:${BUILD_NUMBER}"
+        KUBECONFIG_CREDENTIALS = 'kubeconfig-credentials-id' // Jenkins credentials ID for kubeconfig
+        DOCKER_CREDENTIALS = 'dockerhub-credentials-id' // Jenkins credentials ID for Docker registry
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Build Backend Image') {
+            steps {
+                dir('backend') {
+                    script {
+                        docker.build(env.BACKEND_IMAGE, '.')
+                    }
+                }
+            }
+        }
+        stage('Build Frontend Image') {
+            steps {
+                script {
+                    docker.build(env.FRONTEND_IMAGE, '.')
+                }
+            }
+        }
+        stage('Push Images') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    docker push $BACKEND_IMAGE
+                    docker push $FRONTEND_IMAGE
+                    '''
+                }
+            }
+        }
+        stage('Update Manifests') {
+            steps {
+                script {
+                    sh '''
+                    sed -i "s|image: backend:local|image: $BACKEND_IMAGE|g" k8s-backend-deployment.yaml
+                    sed -i "s|image: frontend:local|image: $FRONTEND_IMAGE|g" k8s-frontend-deployment.yaml
+                    '''
+                }
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                withCredentials([file(credentialsId: env.KUBECONFIG_CREDENTIALS, variable: 'KUBECONFIG')]) {
+                    sh '''
+                    kubectl apply -f k8s-backend-config.yaml
+                    kubectl apply -f k8s-frontend-config.yaml
+                    kubectl apply -f k8s-backend-pvc.yaml
+                    kubectl apply -f k8s-backend-deployment.yaml
+                    kubectl apply -f k8s-frontend-deployment.yaml
+                    kubectl apply -f k8s-ingress.yaml
+                    '''
+                }
+            }
+        }
+    }
+} 
