@@ -36,7 +36,9 @@ const CustomerManagement: React.FC = () => {
 
   const handleAddCustomer = async (customerData: any) => {
     try {
-      await customersAPI.create({ ...customerData, role: 'customer' });
+      const payload = { ...customerData, role: 'customer' };
+      if (payload.gstNumber === '') delete payload.gstNumber;
+      await customersAPI.create(payload);
       await fetchCustomers();
       setShowAddForm(false);
     } catch (error: any) {
@@ -56,7 +58,9 @@ const CustomerManagement: React.FC = () => {
 
   const handleSaveEditCustomer = async (id: string, customerData: Partial<Customer>) => {
     try {
-      await customersAPI.update(id, customerData);
+      const payload = { ...customerData };
+      if (payload.gstNumber === '') delete payload.gstNumber;
+      await customersAPI.update(id, payload);
       await fetchCustomers();
       setShowEditForm(false);
       setSelectedCustomer(null);

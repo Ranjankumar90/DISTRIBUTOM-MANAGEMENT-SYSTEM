@@ -13,9 +13,12 @@ const CollectPayment: React.FC = () => {
   const [reference, setReference] = useState('');
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [collections, setCollections] = useState<any[]>([]);
 
   useEffect(() => {
     customersAPI.getAll().then(res => setCustomers(res.data || []));
+    // Fetch recent collections for this salesman
+    collectionsAPI.getAll().then(res => setCollections(res.data || []));
   }, []);
 
   const handleCollectPayment = async () => {
@@ -197,6 +200,40 @@ const CollectPayment: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Recent Collections Section */}
+      <div className="bg-white rounded-xl shadow-sm mt-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 px-6 pt-6">Recent Collections</h3>
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead>
+            <tr>
+              <th className="px-4 py-2">Collection #</th>
+              <th className="px-4 py-2">Customer</th>
+              <th className="px-4 py-2">Amount</th>
+              <th className="px-4 py-2">Mode</th>
+              <th className="px-4 py-2">Date</th>
+              <th className="px-4 py-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {collections.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center py-4 text-gray-500">No collections found</td>
+              </tr>
+            )}
+            {collections.map((col: any) => (
+              <tr key={col._id} className="hover:bg-gray-50">
+                <td className="px-4 py-2">{col.collectionNumber}</td>
+                <td className="px-4 py-2">{col.customerId?.userId?.name}</td>
+                <td className="px-4 py-2">₹{col.amount}</td>
+                <td className="px-4 py-2">{col.paymentMode}</td>
+                <td className="px-4 py-2">{new Date(col.collectionDate).toLocaleDateString()}</td>
+                <td className="px-4 py-2 font-semibold capitalize">{col.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {showCustomerSelect && (
         <CustomerSelectModal

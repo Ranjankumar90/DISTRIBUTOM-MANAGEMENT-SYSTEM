@@ -37,12 +37,21 @@ const orderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: true
+    required: true,
+    default: function() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const ms = now.getTime();
+      const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      return `ORD-${year}-${ms}-${rand}`;
+    }
   },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
-    required: [true, 'Customer is required']
+    required: function() {
+      return !this.counterSell;
+    }
   },
   salesmanId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -91,6 +100,14 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  counterSell: {
+    type: Boolean,
+    default: false
+  },
+  counterSellDetails: {
+    name: String,
+    address: String
   }
 }, {
   timestamps: true
@@ -104,14 +121,7 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: 1 });
 orderSchema.index({ createdBy: 1 });
 
-// Pre-save middleware to generate order number
-orderSchema.pre('save', async function(next) {
-  if (!this.orderNumber && this.isNew) {
-    const count = await this.constructor.countDocuments();
-    this.orderNumber = `ORD-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
-  }
-  next();
-});
+// Remove pre-save middleware for orderNumber
 
 // Populate related data when querying
 orderSchema.pre(/^find/, function(next) {

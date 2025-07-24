@@ -39,7 +39,10 @@ const validateCustomer = [
     .withMessage('Address must be between 10 and 500 characters'),
   body('gstNumber')
     .optional()
-    .matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+    .custom((value) => {
+      if (value === '') return true;
+      return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(value);
+    })
     .withMessage('Please enter a valid GST number'),
   body('creditLimit')
     .optional()

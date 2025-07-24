@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, Package, ShoppingCart, TrendingUp, IndianRupee, Building, CreditCard, Building2 } from 'lucide-react';
-import { productsAPI, customersAPI, ordersAPI } from '../../services/api';
+import { Users, UserPlus, Package, ShoppingCart, TrendingUp, IndianRupee, Building, CreditCard, Building2, FileText } from 'lucide-react';
+import { productsAPI, customersAPI, ordersAPI, dashboardAPI } from '../../services/api';
 import { DashboardStats } from '../../types';
 import CustomerManagement from './CustomerManagement';
 import SalesmanManagement from './SalesmanManagement';
@@ -10,62 +10,46 @@ import GSTBilling from './GSTBilling';
 import BusinessProfile from './BusinessProfile';
 import CustomerLedger from './CustomerLedger';
 import CompanyManagement from './CompanyManagement';
+import CollectionManagement from './CollectionManagement';
+import DirectBill from './DirectBill';
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [salesmen, setSalesmen] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [customerRes, productRes, orderRes] = await Promise.all([
-          customersAPI.getAll(),
-          productsAPI.getAll(),
-          ordersAPI.getAll()
-        ]);
-        setCustomers(customerRes.data || customerRes || []);
-        setProducts(productRes.data || productRes || []);
-        setOrders(orderRes.data || orderRes || []);
-        // If salesmen are a subset of customers, filter by role
-        setSalesmen((customerRes.data || customerRes || []).filter((c: any) => c.role === 'salesman'));
-      } catch (err: any) {
-        setError(err.message || 'Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    setLoading(true);
+    setError(null);
+    dashboardAPI.getAdminDashboard()
+      .then(res => setDashboard(res.data))
+      .catch(err => setError(err.message || 'Failed to load dashboard'))
+      .finally(() => setLoading(false));
   }, []);
 
   const stats = [
     {
       title: 'Total Customers',
-      value: customers.length,
+      value: dashboard?.overview?.customers?.total ?? 0,
       icon: Users,
       color: 'bg-blue-500'
     },
     {
       title: 'Active Salesmen',
-      value: salesmen.filter((s: any) => s.isActive).length,
+      value: dashboard?.overview?.salesmen?.active ?? 0,
       icon: UserPlus,
       color: 'bg-green-500'
     },
     {
       title: 'Products',
-      value: products.filter((p: any) => p.isActive).length,
+      value: dashboard?.overview?.products?.total ?? 0,
       icon: Package,
       color: 'bg-purple-500'
     },
     {
       title: 'Total Orders',
-      value: orders.length,
+      value: dashboard?.overview?.orders?.total ?? 0,
       icon: ShoppingCart,
       color: 'bg-orange-500'
     }
@@ -80,7 +64,9 @@ const AdminDashboard: React.FC = () => {
     { id: 'products', label: 'Products', icon: Package },
     { id: 'orders', label: 'Orders', icon: ShoppingCart },
     { id: 'billing', label: 'GST Billing', icon: IndianRupee },
-    { id: 'ledger', label: 'Customer Ledger', icon: CreditCard }
+    { id: 'ledger', label: 'Customer Ledger', icon: CreditCard },
+    { id: 'collections', label: 'Collection Approval', icon: CreditCard },
+    { id: 'directbill', label: 'Direct Bill', icon: FileText },
   ];
 
   const renderContent = () => {
@@ -107,6 +93,10 @@ const AdminDashboard: React.FC = () => {
         return <GSTBilling />;
       case 'ledger':
         return <CustomerLedger />;
+      case 'collections':
+        return <CollectionManagement />;
+      case 'directbill':
+        return <DirectBill />;
       default:
         return (
           <div className="space-y-6">
@@ -128,39 +118,47 @@ const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
-                {orders.slice(0, 5).map((order: any) => (
-                  <div key={order._id || order.id} className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <div>
-                      <p className="font-medium text-gray-900">{order.orderNumber}</p>
-                      <p className="text-sm text-gray-600">{new Date(order.orderDate).toLocaleDateString()}</p>
+                {dashboard?.recentOrders && dashboard.recentOrders.length > 0 ? (
+                  dashboard.recentOrders.map((order: any) => (
+                    <div key={order._id || order.id} className="flex items-center justify-between py-2 border-b border-gray-100">
+                      <div>
+                        <p className="font-medium text-gray-900">{order.orderNumber}</p>
+                        <p className="text-sm text-gray-600">{new Date(order.orderDate).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-gray-900">₹{order.netAmount}</p>
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          order.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {order.status}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900">₹{order.netAmount}</p>
-                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                        order.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                        order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 py-4">No recent orders</div>
+                )}
               </div>
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Customers</h3>
-                {customers.slice(0, 5).map((customer: any) => (
-                  <div key={customer._id || customer.id} className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <div>
-                      <p className="font-medium text-gray-900">{customer.name}</p>
-                      <p className="text-sm text-gray-600">{customer.territory || 'No territory'}</p>
+                {dashboard?.topCustomers && dashboard.topCustomers.length > 0 ? (
+                  dashboard.topCustomers.map((customer: any) => (
+                    <div key={customer._id || customer.id} className="flex items-center justify-between py-2 border-b border-gray-100">
+                      <div>
+                        <p className="font-medium text-gray-900">{customer.userId?.name}</p>
+                        <p className="text-sm text-gray-600">{customer.territory || 'No territory'}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-gray-900">₹{customer.outstandingAmount}</p>
+                        <p className="text-xs text-gray-600">Outstanding</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900">₹{customer.outstandingAmount}</p>
-                      <p className="text-xs text-gray-600">Outstanding</p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 py-4">No top customers</div>
+                )}
               </div>
             </div>
           </div>

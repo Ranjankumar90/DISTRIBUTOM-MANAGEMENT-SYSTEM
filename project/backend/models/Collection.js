@@ -45,8 +45,8 @@ const collectionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'cleared', 'bounced', 'cancelled'],
-    default: 'cleared'
+    enum: ['pending', 'approved', 'cleared', 'bounced', 'cancelled', 'failed'],
+    default: 'pending'
   },
   notes: {
     type: String,

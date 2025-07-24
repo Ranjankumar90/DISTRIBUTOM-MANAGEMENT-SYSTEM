@@ -7,6 +7,7 @@ import CollectPayment from './CollectPayment';
 import CustomerVisits from './CustomerVisits';
 import SalesReport from './SalesReport';
 import SalesmanProductManagement from './SalesmanProductManagement';
+import SalesmanLedger from './SalesmanLedger';
 
 const SalesmanDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -65,7 +66,8 @@ const SalesmanDashboard: React.FC = () => {
     { id: 'collect-payment', label: 'Collect Payment', icon: DollarSign },
     { id: 'products', label: 'Product Management', icon: Package },
     { id: 'customer-visits', label: 'Customer Visits', icon: MapPin },
-    { id: 'sales-report', label: 'Sales Report', icon: Calendar }
+    { id: 'sales-report', label: 'Sales Report', icon: Calendar },
+    { id: 'ledger', label: 'Customer Ledger', icon: DollarSign },
   ];
 
   const renderContent = () => {
@@ -80,6 +82,8 @@ const SalesmanDashboard: React.FC = () => {
         return <SalesmanProductManagement />;
       case 'sales-report':
         return <SalesReport />;
+      case 'ledger':
+        return <SalesmanLedger />;
       default:
         return (
           <div className="space-y-6">
@@ -102,6 +106,21 @@ const SalesmanDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
+                <button
+                  onClick={async () => {
+                    const [orderRes, customerRes, salesmenRes] = await Promise.all([
+                      ordersAPI.getAll(),
+                      customersAPI.getAll(),
+                      salesmenAPI.getAll()
+                    ]);
+                    setOrders(orderRes.data || []);
+                    setCustomers(customerRes.data || []);
+                    setSalesmen(salesmenRes.data || []);
+                  }}
+                  className="mb-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Refresh Orders
+                </button>
                 <div className="space-y-3">
                   {salesmanOrders.slice(0, 5).map((order) => {
                     return (

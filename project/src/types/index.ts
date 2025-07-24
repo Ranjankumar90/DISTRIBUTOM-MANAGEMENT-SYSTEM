@@ -74,6 +74,18 @@ export interface Product {
     manufacturingDate?: string;
     expiryDate?: string;
   };
+  /**
+   * Expiry date for the product (for direct access in tables)
+   */
+  expiryDate?: string;
+  /**
+   * Batch number for the product (for direct access in forms)
+   */
+  batchNumber?: string;
+  /**
+   * Manufacturing date for the product (for direct access in forms)
+   */
+  manufacturingDate?: string;
   dimensions?: {
     length?: number;
     width?: number;

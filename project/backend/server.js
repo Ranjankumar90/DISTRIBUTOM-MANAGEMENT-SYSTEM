@@ -20,6 +20,7 @@ const orderRoutes = require('./routes/orders');
 const collectionRoutes = require('./routes/collections');
 const ledgerRoutes = require('./routes/ledger');
 const dashboardRoutes = require('./routes/dashboard');
+const visitsRoutes = require('./routes/visits');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -70,6 +71,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/collections', collectionRoutes);
 app.use('/api/ledger', ledgerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/visits', visitsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

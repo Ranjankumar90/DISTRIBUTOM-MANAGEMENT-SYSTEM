@@ -72,7 +72,11 @@ const SalesmanProductManagement: React.FC = () => {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {companies.map((company) => {
-          const companyProducts = products.filter(p => p.companyId === company._id && p.isActive);
+          const companyProducts = products.filter(p => (
+            (typeof p.companyId === 'string'
+              ? p.companyId === company._id
+              : p.companyId && p.companyId._id === company._id) && p.isActive
+          ));
           const totalStock = companyProducts.reduce((sum, p) => sum + p.stock, 0);
           const lowStockCount = companyProducts.filter(p => p.stock <= p.minStockLevel).length;
           const expiringCount = companyProducts.filter(p => {
@@ -127,7 +131,11 @@ const SalesmanProductManagement: React.FC = () => {
 
   const renderCompanyProducts = () => {
     const company = companies.find(c => c._id === selectedCompanyView);
-    const companyProducts = products.filter(p => p.companyId === selectedCompanyView && p.isActive);
+    const companyProducts = products.filter(p => (
+      (typeof p.companyId === 'string'
+        ? p.companyId === selectedCompanyView
+        : p.companyId && p.companyId._id === selectedCompanyView) && p.isActive
+    ));
 
     return (
       <div className="space-y-6">

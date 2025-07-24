@@ -123,8 +123,15 @@ router.get('/:id', auth, async (req, res) => {
 // @access  Private (Admin)
 router.post('/', auth, authorize('admin'), validateProduct, async (req, res) => {
   try {
+    // Ensure batchInfo fields are set from top-level if present
+    const batchInfo = {
+      batchNumber: req.body.batchNumber || (req.body.batchInfo && req.body.batchInfo.batchNumber),
+      manufacturingDate: req.body.manufacturingDate || (req.body.batchInfo && req.body.batchInfo.manufacturingDate),
+      expiryDate: req.body.expiryDate || (req.body.batchInfo && req.body.batchInfo.expiryDate),
+    };
     const product = new Product({
       ...req.body,
+      batchInfo,
       createdBy: req.user._id
     });
 
@@ -159,8 +166,13 @@ router.put('/:id', auth, authorize('admin'), validateProduct, async (req, res) =
       });
     }
 
-    // Update product
-    Object.assign(product, req.body);
+    // Ensure batchInfo fields are set from top-level if present
+    const batchInfo = {
+      batchNumber: req.body.batchNumber || (req.body.batchInfo && req.body.batchInfo.batchNumber),
+      manufacturingDate: req.body.manufacturingDate || (req.body.batchInfo && req.body.batchInfo.manufacturingDate),
+      expiryDate: req.body.expiryDate || (req.body.batchInfo && req.body.batchInfo.expiryDate),
+    };
+    Object.assign(product, req.body, { batchInfo });
     await product.save();
     await product.populate('companyId', 'name gstNumber');
 

@@ -84,33 +84,54 @@ const TakeOrder: React.FC = () => {
       return;
     }
     const { totalAmount, gstAmount, netAmount } = getCartTotal();
+    // Calculate total discountAmount from cart
+    const discountAmount = cart.reduce((sum, item) => sum + (item.discount || 0), 0);
+    // Ensure all required fields are present in each item
+    const items = cart.map(item => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      rate: item.rate,
+      amount: item.amount,
+      gstAmount: item.gstAmount,
+      discount: item.discount || 0
+    }));
     try {
       console.log('Order data:', {
         customerId: selectedCustomer._id,
-        items: cart,
+        items,
         totalAmount,
         gstAmount,
         netAmount,
+        discountAmount,
         status: 'pending',
         orderDate: new Date().toISOString(),
         createdBy: selectedCustomer.userId._id
       });
       await ordersAPI.create({
         customerId: selectedCustomer._id,
-        items: cart,
+        items,
         totalAmount,
         gstAmount,
         netAmount,
+        discountAmount,
         status: 'pending',
         orderDate: new Date().toISOString(),
         createdBy: selectedCustomer.userId._id
       });
-      alert(`Order placed for ${selectedCustomer.userId.name}!\nTotal: ₹${netAmount.toFixed(2)}`);
+      alert(`Order placed successfully for ${selectedCustomer.userId.name}!\nTotal: ₹${netAmount.toFixed(2)}`);
       setCart([]);
       setSelectedCustomer(null);
-    } catch (err) {
+      // Optionally, refresh the page to reset the form
+      window.location.reload();
+    } catch (err: any) {
       console.error('Order placement error:', err);
-      alert('Order placement failed. See console for details.');
+      if (err.backend && err.backend.error) {
+        alert('Order placement failed: ' + err.backend.error);
+      } else if (err && err.message) {
+        alert('Order placement failed: ' + err.message);
+      } else {
+        alert('Order placement failed. See console for details.');
+      }
     }
   };
 
@@ -256,7 +277,21 @@ const TakeOrder: React.FC = () => {
                           >
                             <Minus className="h-4 w-4" />
                           </button>
-                          <span className="font-medium text-gray-900 w-8 text-center">{cartItem.quantity}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={product.stock}
+                            value={cartItem.quantity}
+                            onFocus={e => e.target.select()}
+                            onChange={e => {
+                              let val = parseInt(e.target.value, 10);
+                              if (isNaN(val)) val = 1;
+                              if (val < 1) val = 1;
+                              if (val > product.stock) val = product.stock;
+                              updateQuantity(product._id, val);
+                            }}
+                            className="w-12 text-center border border-gray-300 rounded px-2 py-1 mx-1"
+                          />
                           <button
                             onClick={() => updateQuantity(product._id, cartItem.quantity + 1)}
                             className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center hover:bg-green-200"

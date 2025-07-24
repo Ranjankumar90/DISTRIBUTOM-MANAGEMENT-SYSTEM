@@ -241,7 +241,7 @@ const AddCompanyModal: React.FC<{
               type="text"
               required
               value={formData.gstNumber}
-              onChange={(e) => setFormData({ ...formData, gstNumber: stripLeadingZeros(e.target.value) })}
+              onChange={(e) => setFormData({ ...formData, gstNumber: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Enter GST number"
             />

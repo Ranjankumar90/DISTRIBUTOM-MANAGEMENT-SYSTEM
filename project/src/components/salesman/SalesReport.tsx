@@ -3,6 +3,24 @@ import { Calendar, TrendingUp, DollarSign, Users, Download, BarChart3 } from 'lu
 import { useAuth } from '../../contexts/AuthContext';
 import { ordersAPI, collectionsAPI, customersAPI, salesmenAPI } from '../../services/api';
 
+type ExportColumn<T> = { header: string; accessor: (row: T) => string | number | undefined | null };
+function exportToCSV<T>(data: T[], columns: ExportColumn<T>[], filename: string) {
+  const csvRows = [
+    columns.map(col => `"${col.header}"`).join(','),
+    ...data.map(row =>
+      columns.map(col => `"${col.accessor(row) ?? ''}"`).join(',')
+    )
+  ];
+  const csvString = csvRows.join('\n');
+  const blob = new Blob([csvString], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 const SalesReport: React.FC = () => {
   const { user } = useAuth();
   const [dateRange, setDateRange] = useState('30');
@@ -177,14 +195,19 @@ const SalesReport: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {salesmanOrders.map((order) => {
-              const customer = customers.find(c => (typeof c.id === 'string' ? c.id === order.customerId : c.id?._id === order.customerId));
+              const customer = customers.find(c => {
+                if (typeof c._id === 'string') {
+                  return c._id === (typeof order.customerId === 'string' ? order.customerId : order.customerId?._id);
+                }
+                return false;
+              });
               return (
-                <tr key={order.id} className="hover:bg-gray-50">
+                <tr key={order._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {order.id}
+                    {order._id}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {customer?.name}
+                    {customer?.userId?.name || customer?.name || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {order.orderDate}
@@ -243,23 +266,28 @@ const SalesReport: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {salesmanCollections.map((collection) => {
-              const customer = customers.find(c => (typeof c.id === 'string' ? c.id === collection.customerId : c.id?._id === collection.customerId));
+              const customer = customers.find(c => {
+                if (typeof c._id === 'string') {
+                  return c._id === (typeof collection.customerId === 'string' ? collection.customerId : collection.customerId?._id);
+                }
+                return false;
+              });
               return (
-                <tr key={collection.id} className="hover:bg-gray-50">
+                <tr key={collection._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {collection.id}
+                    {collection._id}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {customer?.name}
+                    {customer?.userId?.name || customer?.name || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {collection.date}
+                    {collection.collectionDate || collection.date}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ₹{collection.amount}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
-                    {collection.paymentMode.replace('_', ' ')}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {collection.paymentMode || collection.mode}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
@@ -294,7 +322,43 @@ const SalesReport: React.FC = () => {
             <option value="90">Last 3 months</option>
             <option value="365">Last year</option>
           </select>
-          <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2">
+          <button
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            onClick={() => {
+              if (reportType === 'sales') {
+                exportToCSV(
+                  salesmanOrders,
+                  [
+                    { header: 'Order ID', accessor: o => o._id },
+                    { header: 'Customer', accessor: o => {
+                      const customer = customers.find(c => typeof c._id === 'string' && c._id === (typeof o.customerId === 'string' ? o.customerId : o.customerId?._id));
+                      return customer?.userId?.name || customer?.name || 'Unknown';
+                    }},
+                    { header: 'Date', accessor: o => o.orderDate },
+                    { header: 'Amount', accessor: o => o.netAmount },
+                    { header: 'Status', accessor: o => o.status }
+                  ],
+                  'sales-report.csv'
+                );
+              } else if (reportType === 'collections') {
+                exportToCSV(
+                  salesmanCollections,
+                  [
+                    { header: 'Collection ID', accessor: c => c._id },
+                    { header: 'Customer', accessor: c => {
+                      const customer = customers.find(cu => typeof cu._id === 'string' && cu._id === (typeof c.customerId === 'string' ? c.customerId : c.customerId?._id));
+                      return customer?.userId?.name || customer?.name || 'Unknown';
+                    }},
+                    { header: 'Date', accessor: c => c.collectionDate || c.date },
+                    { header: 'Amount', accessor: c => c.amount },
+                    { header: 'Mode', accessor: c => c.paymentMode || c.mode },
+                    { header: 'Status', accessor: c => c.status }
+                  ],
+                  'collections-report.csv'
+                );
+              }
+            }}
+          >
             <Download className="h-5 w-5" />
             <span>Export</span>
           </button>

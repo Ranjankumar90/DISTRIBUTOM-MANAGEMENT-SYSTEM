@@ -1,40 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Calendar, Clock, Plus, Search, User, Phone } from 'lucide-react';
-import { customersAPI } from '../../services/api';
+import { customersAPI, visitsAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface Visit {
-  id: string;
+  _id?: string;
   customerId: string;
+  salesmanId?: string;
   date: string;
   time: string;
   purpose: 'order' | 'collection' | 'follow_up' | 'new_customer';
   notes: string;
   status: 'planned' | 'completed' | 'missed';
+  createdBy?: string;
 }
 
 const CustomerVisits: React.FC = () => {
   const { user } = useAuth();
-  const [visits, setVisits] = useState<Visit[]>([
-    {
-      id: 'visit-1',
-      customerId: 'cust-1',
-      date: '2024-01-20',
-      time: '10:00',
-      purpose: 'order',
-      notes: 'Monthly order collection',
-      status: 'completed'
-    },
-    {
-      id: 'visit-2',
-      customerId: 'cust-2',
-      date: '2024-01-21',
-      time: '14:00',
-      purpose: 'collection',
-      notes: 'Collect pending payment',
-      status: 'planned'
-    }
-  ]);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [showAddVisit, setShowAddVisit] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,22 +25,26 @@ const CustomerVisits: React.FC = () => {
 
   useEffect(() => {
     customersAPI.getAll().then(res => setCustomers(res.data || []));
+    visitsAPI.getAll().then(res => setVisits(res.data || []));
   }, []);
 
   const filteredVisits = visits.filter(visit => {
-    const customer = customers.find(c => c._id === visit.customerId);
+    const id = typeof visit.customerId === 'string' ? visit.customerId : visit.customerId._id;
+    const customer = customers.find(c => c._id === id);
     const matchesSearch = customer?.userId.name.toLowerCase().includes(searchTerm.toLowerCase()) || false;
     const matchesStatus = statusFilter === 'all' || visit.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const getCustomerName = (customerId: string) => {
-    const customer = customers.find(c => c._id === customerId);
+  const getCustomerName = (customerId: string | { _id: string, userId: any }) => {
+    const id = typeof customerId === 'string' ? customerId : customerId._id;
+    const customer = customers.find(c => c._id === id);
     return customer?.userId.name || 'Unknown Customer';
   };
 
-  const getCustomerDetails = (customerId: string) => {
-    return customers.find(c => c._id === customerId);
+  const getCustomerDetails = (customerId: string | { _id: string, userId: any }) => {
+    const id = typeof customerId === 'string' ? customerId : customerId._id;
+    return customers.find(c => c._id === id);
   };
 
   const getPurposeColor = (purpose: Visit['purpose']) => {
@@ -88,10 +75,14 @@ const CustomerVisits: React.FC = () => {
     }
   };
 
-  const updateVisitStatus = (visitId: string, status: Visit['status']) => {
-    setVisits(visits.map(visit => 
-      visit.id === visitId ? { ...visit, status } : visit
-    ));
+  const updateVisitStatus = async (visitId: string, status: Visit['status']) => {
+    const visit = visits.find(v => v._id === visitId);
+    if (!visit) return;
+    const updated = { ...visit, status };
+    await visitsAPI.update(visitId, updated);
+    // Refresh visits
+    const res = await visitsAPI.getAll();
+    setVisits(res.data || []);
   };
 
   return (
@@ -137,7 +128,7 @@ const CustomerVisits: React.FC = () => {
           {filteredVisits.map((visit) => {
             const customer = getCustomerDetails(visit.customerId);
             return (
-              <div key={visit.id} className="p-6 hover:bg-gray-50">
+              <div key={visit._id} className="p-6 hover:bg-gray-50">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
@@ -183,13 +174,13 @@ const CustomerVisits: React.FC = () => {
                     {visit.status === 'planned' && (
                       <>
                         <button
-                          onClick={() => updateVisitStatus(visit.id, 'completed')}
+                          onClick={() => updateVisitStatus(visit._id!, 'completed')}
                           className="px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm"
                         >
                           Mark Complete
                         </button>
                         <button
-                          onClick={() => updateVisitStatus(visit.id, 'missed')}
+                          onClick={() => updateVisitStatus(visit._id!, 'missed')}
                           className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
                         >
                           Mark Missed
@@ -207,13 +198,15 @@ const CustomerVisits: React.FC = () => {
       {showAddVisit && (
         <AddVisitModal
           customers={customers}
-          onAdd={(visit) => {
-            const newVisit: Visit = {
-              id: `visit-${Date.now()}`,
+          onAdd={async (visit) => {
+            await visitsAPI.create({
               ...visit,
-              status: 'planned'
-            };
-            setVisits([...visits, newVisit]);
+              salesmanId: user?._id,
+              createdBy: user?._id,
+              status: 'planned',
+            });
+            const res = await visitsAPI.getAll();
+            setVisits(res.data || []);
             setShowAddVisit(false);
           }}
           onClose={() => setShowAddVisit(false)}

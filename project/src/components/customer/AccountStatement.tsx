@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Calendar, CreditCard, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { customersAPI, ordersAPI, collectionsAPI } from '../../services/api';
+import { customersAPI, ordersAPI, collectionsAPI, dashboardAPI } from '../../services/api';
 
 const AccountStatement: React.FC = () => {
   const { user } = useAuth();
@@ -11,6 +11,7 @@ const AccountStatement: React.FC = () => {
   const [customerCollections, setCustomerCollections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<any>(null);
 
   useEffect(() => {
     if (!user?._id) return;
@@ -28,6 +29,9 @@ const AccountStatement: React.FC = () => {
         }
         const ordersData = await ordersAPI.getAll({ customerId: user._id });
         const collectionsData = await collectionsAPI.getAll({ customerId: user._id });
+        // Fetch dashboard summary from backend
+        const dashboardRes = await dashboardAPI.getCustomerDashboard();
+        setDashboard(dashboardRes.data);
         setCustomer(customerData);
         setCustomerOrders(ordersData.data || ordersData);
         setCustomerCollections(collectionsData.data || collectionsData);
@@ -66,7 +70,7 @@ const AccountStatement: React.FC = () => {
       })),
     ...customerCollections.map(collection => ({
       id: collection._id || collection.id,
-      date: collection.date,
+      date: collection.collectionDate,
       type: 'payment' as const,
       description: `Payment - ${collection.paymentMode || ''}`.trim(),
       debit: 0,
@@ -111,56 +115,6 @@ const AccountStatement: React.FC = () => {
             <Download className="h-5 w-5" />
             <span>Export</span>
           </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Credit Limit</p>
-              <p className="text-2xl font-bold text-gray-900">{formatCurrency(customer?.creditLimit || 0)}</p>
-            </div>
-            <div className="bg-blue-100 p-3 rounded-lg">
-              <CreditCard className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Outstanding</p>
-              <p className="text-2xl font-bold text-red-600">{formatCurrency(customer?.outstandingAmount || 0)}</p>
-            </div>
-            <div className="bg-red-100 p-3 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Orders</p>
-              <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalOrders)}</p>
-            </div>
-            <div className="bg-purple-100 p-3 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Payments</p>
-              <p className="text-2xl font-bold text-green-600">{formatCurrency(totalPayments)}</p>
-            </div>
-            <div className="bg-green-100 p-3 rounded-lg">
-              <TrendingDown className="h-6 w-6 text-green-600" />
-            </div>
-          </div>
         </div>
       </div>
 

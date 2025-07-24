@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
 import { FileText, Download, Search, Calendar, Filter } from 'lucide-react';
 import { ordersAPI, customersAPI, productsAPI, companiesAPI } from '../../services/api';
 import { businessProfile } from '../../data/businessProfile';
@@ -28,6 +29,7 @@ const GSTBilling: React.FC = () => {
         ]);
         setOrders(orderRes.data || orderRes || []);
         setCustomers(customerRes.data || customerRes || []);
+        console.log('Sample customers:', customerRes.data || customerRes || []);
         setProducts(productRes.data || productRes || []);
         setCompanies(companyRes.data || companyRes || []);
       } catch (err: any) {
@@ -39,16 +41,28 @@ const GSTBilling: React.FC = () => {
     fetchData();
   }, []);
 
+  const getCustomerDetails = (customerId: any) => {
+    // If customerId is an object, use its _id
+    const id = typeof customerId === 'object' && customerId !== null ? customerId._id : customerId;
+    return customers.find((c: any) => c.id === id || c._id === id);
+  };
+
   const filteredOrders = orders.filter((order: any) => {
-    const matchesSearch = (order.id || order._id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (order.billNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
+    // Get customer name for search
+    let customerName = '';
+    if (typeof order.customerId === 'object' && order.customerId !== null) {
+      customerName = order.customerId.userId?.name || '';
+    } else {
+      const customer = getCustomerDetails(order.customerId);
+      customerName = customer?.userId?.name || customer?.name || '';
+    }
+    const matchesSearch =
+      (order.id || order._id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (order.billNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customerName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDate = !dateFilter || order.orderDate === dateFilter;
     return matchesSearch && matchesDate && order.status !== 'cancelled';
   });
-
-  const getCustomerDetails = (customerId: string) => {
-    return customers.find((c: any) => c.id === customerId || c._id === customerId);
-  };
 
   const getProductDetails = (productId: string) => {
     return products.find((p: any) => p.id === productId || p._id === productId);
@@ -56,6 +70,31 @@ const GSTBilling: React.FC = () => {
 
   const generateBill = (order: Order) => {
     setSelectedOrder(order);
+  };
+
+  const exportAllBills = () => {
+    const csvRows = [
+      ['Order ID', 'Customer Name', 'Date', 'Amount', 'GST', 'Total'],
+      ...filteredOrders.map(order => {
+        const customer = getCustomerDetails(order.customerId);
+        return [
+          order.id || order._id,
+          customer?.userId?.name || '',
+          order.orderDate,
+          order.totalAmount,
+          order.gstAmount,
+          order.netAmount
+        ].join(',');
+      })
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "gst_bills.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (loading) {
@@ -66,10 +105,10 @@ const GSTBilling: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:hidden">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">GST Billing</h2>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2">
+        <button onClick={exportAllBills} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2">
           <Download className="h-5 w-5" />
           <span>Export All Bills</span>
         </button>
@@ -129,7 +168,10 @@ const GSTBilling: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredOrders.map((order: any) => {
-                const customer = getCustomerDetails(order.customerId);
+                let customer = getCustomerDetails(order.customerId);
+                if (order.counterSell && order.counterSellDetails) {
+                  customer = { name: order.counterSellDetails.name, address: order.counterSellDetails.address };
+                }
                 return (
                   <tr key={order.id || order._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -142,7 +184,13 @@ const GSTBilling: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{customer?.name}</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {
+                            typeof order.customerId === 'object' && order.customerId !== null
+                              ? order.customerId.userId?.name
+                              : customer?.userId?.name || customer?.name || order.customerId || 'Unknown'
+                          }
+                        </div>
                         <div className="text-sm text-gray-500">{customer?.gstNumber || 'No GST'}</div>
                       </div>
                     </td>
@@ -161,7 +209,13 @@ const GSTBilling: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => generateBill(order)}
+                          onClick={() => {
+                            let customerObj = getCustomerDetails(order.customerId);
+                            if (order.counterSell && order.counterSellDetails) {
+                              customerObj = { name: order.counterSellDetails.name, address: order.counterSellDetails.address };
+                            }
+                            setSelectedOrder({ ...order, customer: customerObj });
+                          }}
                           className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
                         >
                           <FileText className="h-4 w-4" />
@@ -180,7 +234,7 @@ const GSTBilling: React.FC = () => {
       {selectedOrder && (
         <GSTBillModal
           order={selectedOrder}
-          customer={getCustomerDetails(selectedOrder.customerId)!}
+          customer={selectedOrder.counterSell && selectedOrder.counterSellDetails ? { name: selectedOrder.counterSellDetails.name, address: selectedOrder.counterSellDetails.address } : getCustomerDetails(selectedOrder.customerId)}
           getProductDetails={getProductDetails}
           onClose={() => setSelectedOrder(null)}
         />
@@ -203,18 +257,20 @@ const GSTBillModal: React.FC<{
     email: businessProfile.email
   };
 
-  const printBill = () => {
-    window.print();
-  };
+  const billRef = useRef<any>(null);
+  const handlePrint = useReactToPrint({
+    contentRef: billRef,
+    pageStyle: '@media print { body { -webkit-print-color-adjust: exact; } }',
+  });
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 print:hidden">
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto print:block print:fixed print:inset-0 print:bg-white print:z-50 print:shadow-none print:rounded-none print:max-w-full print:max-h-full">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
           <h3 className="text-lg font-semibold text-gray-900">GST Invoice</h3>
           <div className="flex space-x-3">
             <button
-              onClick={printBill}
+              onClick={handlePrint}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
             >
               <Download className="h-4 w-4" />
@@ -228,14 +284,12 @@ const GSTBillModal: React.FC<{
             </button>
           </div>
         </div>
-
-        <div className="p-8 print:p-4">
+        <div ref={billRef} className="p-8 print:p-4 flex flex-col min-h-[100vh] max-w-[800px] mx-auto">
           {/* Header */}
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-gray-900">TAX INVOICE</h1>
             <p className="text-gray-600">GST Invoice</p>
           </div>
-
           {/* Company and Customer Details */}
           <div className="grid grid-cols-2 gap-8 mb-6">
             <div>
@@ -251,14 +305,13 @@ const GSTBillModal: React.FC<{
             <div>
               <h3 className="font-semibold text-gray-900 mb-2">To:</h3>
               <div className="text-sm text-gray-700">
-                <p className="font-medium">{customer.name}</p>
-                <p>{customer.address}</p>
-                {customer.gstNumber && <p>GST No: {customer.gstNumber}</p>}
-                <p>Phone: {customer.mobile}</p>
+                <p className="font-medium">{customer?.name || 'Unknown Customer'}</p>
+                <p>{customer?.address || ''}</p>
+                {customer?.gstNumber && <p>GST No: {customer.gstNumber}</p>}
+                <p>Phone: {customer?.mobile || ''}</p>
               </div>
             </div>
           </div>
-
           {/* Invoice Details */}
           <div className="grid grid-cols-2 gap-8 mb-6">
             <div>
@@ -274,7 +327,6 @@ const GSTBillModal: React.FC<{
               </div>
             </div>
           </div>
-
           {/* Items Table */}
           <div className="mb-6">
             <table className="w-full border border-gray-300">
@@ -284,7 +336,7 @@ const GSTBillModal: React.FC<{
                     S.No
                   </th>
                   <th className="border border-gray-300 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                    Description
+                    Product Name
                   </th>
                   <th className="border border-gray-300 px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">
                     Qty
@@ -308,7 +360,8 @@ const GSTBillModal: React.FC<{
               </thead>
               <tbody>
                 {order.items.map((item, index) => {
-                  const product = getProductDetails(item.productId);
+                  const productId = typeof item.productId === 'object' && item.productId !== null ? item.productId._id : item.productId;
+                  const product = getProductDetails(productId);
                   return (
                     <tr key={index}>
                       <td className="border border-gray-300 px-4 py-2 text-sm">{index + 1}</td>
@@ -325,7 +378,6 @@ const GSTBillModal: React.FC<{
               </tbody>
             </table>
           </div>
-
           {/* Totals */}
           <div className="flex justify-end mb-6">
             <div className="w-64">
@@ -345,22 +397,21 @@ const GSTBillModal: React.FC<{
               </div>
             </div>
           </div>
-
-          {/* Terms and Conditions */}
-          <div className="text-xs text-gray-600 mb-6">
-            <h4 className="font-semibold mb-2">Terms & Conditions:</h4>
-            <ul className="space-y-1">
-              <li>• Payment is due within 30 days of invoice date</li>
-              <li>• Goods once sold will not be taken back</li>
-              <li>• All disputes subject to local jurisdiction</li>
-              <li>• This is a computer generated invoice</li>
-            </ul>
-          </div>
-
-          {/* Footer */}
-          <div className="text-center text-xs text-gray-500 border-t pt-4">
-            <p>Thank you for your business!</p>
-            <p>This is a system generated invoice and does not require signature</p>
+          {/* Terms & Conditions and Footer pinned to bottom */}
+          <div className="mt-auto flex flex-col gap-2">
+            <div className="text-xs text-gray-600 flex-shrink-0">
+              <h4 className="font-semibold mb-2">Terms & Conditions:</h4>
+              <ul className="space-y-1">
+                <li>• Payment is due within 30 days of invoice date</li>
+                <li>• Goods once sold will not be taken back</li>
+                <li>• All disputes subject to local jurisdiction</li>
+                <li>• This is a computer generated invoice</li>
+              </ul>
+            </div>
+            <div className="text-center text-xs text-gray-500 border-t pt-4 flex-shrink-0">
+              <p>Thank you for your business!</p>
+              <p>This is a system generated invoice and does not require signature</p>
+            </div>
           </div>
         </div>
       </div>

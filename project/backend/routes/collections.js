@@ -198,7 +198,7 @@ router.post('/', auth, authorize('salesman', 'admin'), validateCollection, async
       });
     }
 
-    // Create collection
+    // Create collection with status 'pending'
     const collection = new Collection({
       customerId,
       salesmanId,
@@ -206,38 +206,13 @@ router.post('/', auth, authorize('salesman', 'admin'), validateCollection, async
       paymentMode,
       paymentDetails,
       notes,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      status: 'pending'
     });
 
     await collection.save();
 
-    // Update customer outstanding amount (reduce it)
-    customer.outstandingAmount = Math.max(0, customer.outstandingAmount - amount);
-    await customer.save();
-
-    // Create ledger entry
-    const ledgerEntry = new LedgerEntry({
-      customerId,
-      entryDate: collection.collectionDate,
-      description: `Payment ${collection.collectionNumber} - ${paymentMode}`,
-      type: 'payment',
-      amount,
-      reference: collection.collectionNumber,
-      referenceId: collection._id,
-      referenceModel: 'Collection',
-      createdBy: req.user._id
-    });
-
-    await ledgerEntry.save();
-
-    // Update salesman achieved amount
-    if (req.user.role === 'salesman') {
-      const salesman = await Salesman.findById(salesmanId);
-      if (salesman) {
-        salesman.achievedAmount += amount;
-        await salesman.save();
-      }
-    }
+    // Do NOT update customer outstanding or create ledger entry here
 
     // Populate collection data for response
     await collection.populate([
@@ -253,7 +228,7 @@ router.post('/', auth, authorize('salesman', 'admin'), validateCollection, async
 
     res.status(201).json({
       success: true,
-      message: 'Collection recorded successfully',
+      message: 'Collection recorded and pending admin approval',
       data: collection
     });
   } catch (error) {
@@ -272,7 +247,7 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
   try {
     const { status } = req.body;
 
-    if (!['pending', 'cleared', 'bounced', 'cancelled'].includes(status)) {
+    if (!['pending', 'approved', 'cleared', 'bounced', 'cancelled', 'failed'].includes(status)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid status'
@@ -290,7 +265,32 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
     const oldStatus = collection.status;
     collection.status = status;
 
-    // Handle status changes
+    // Handle admin approval/rejection from 'pending' status
+    if (oldStatus === 'pending' && status === 'approved') {
+      // Update customer outstanding amount (reduce it)
+      const customer = await Customer.findById(collection.customerId);
+      if (customer) {
+        customer.outstandingAmount = Math.max(0, customer.outstandingAmount - collection.amount);
+        await customer.save();
+      }
+      // Create ledger entry
+      const ledgerEntry = new LedgerEntry({
+        customerId: collection.customerId,
+        entryDate: new Date(),
+        description: `Payment ${collection.collectionNumber} - Approved`,
+        type: 'payment',
+        amount: collection.amount,
+        reference: collection.collectionNumber,
+        referenceId: collection._id,
+        referenceModel: 'Collection',
+        createdBy: req.user._id
+      });
+      await ledgerEntry.save();
+    } else if (oldStatus === 'pending' && status === 'failed') {
+      // Do nothing to ledger, just mark as failed
+    }
+
+    // Existing logic for cleared/bounced/cancelled
     if (oldStatus === 'cleared' && status === 'bounced') {
       // If payment bounced, add back to customer outstanding
       const customer = await Customer.findById(collection.customerId);
@@ -298,7 +298,6 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
         customer.outstandingAmount += collection.amount;
         await customer.save();
       }
-
       // Create reversal ledger entry
       const ledgerEntry = new LedgerEntry({
         customerId: collection.customerId,
@@ -311,7 +310,6 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
         referenceModel: 'Collection',
         createdBy: req.user._id
       });
-
       await ledgerEntry.save();
     } else if (oldStatus === 'bounced' && status === 'cleared') {
       // If payment cleared after bounce, reduce outstanding again
@@ -320,7 +318,6 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
         customer.outstandingAmount = Math.max(0, customer.outstandingAmount - collection.amount);
         await customer.save();
       }
-
       // Create ledger entry
       const ledgerEntry = new LedgerEntry({
         customerId: collection.customerId,
@@ -333,7 +330,6 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
         referenceModel: 'Collection',
         createdBy: req.user._id
       });
-
       await ledgerEntry.save();
     }
 

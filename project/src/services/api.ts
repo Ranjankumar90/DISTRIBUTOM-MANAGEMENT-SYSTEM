@@ -16,7 +16,10 @@ const apiRequest = async (endpoint: string, config: RequestInit = {}) => {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || 'API request failed');
+      // Attach the full backend error response to the thrown error
+      const error = new Error(data.message || 'API request failed');
+      (error as any).backend = data;
+      throw error;
     }
 
     return data;
@@ -221,6 +224,13 @@ export const collectionsAPI = {
       body: JSON.stringify(collectionData),
     });
   },
+
+  updateStatus: async (id: string, status: string) => {
+    return apiRequest(`/collections/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
 };
 
 export const dashboardAPI = {
@@ -253,5 +263,29 @@ export const ledgerAPI = {
 
   getByCustomer: async (customerId: string) => {
     return apiRequest(`/ledger/customer/${customerId}`);
+  },
+};
+
+export const visitsAPI = {
+  getAll: async (params?: any) => {
+    const queryParams = params ? '?' + new URLSearchParams(params).toString() : '';
+    return apiRequest(`/visits${queryParams}`);
+  },
+  create: async (visitData: any) => {
+    return apiRequest('/visits', {
+      method: 'POST',
+      body: JSON.stringify(visitData),
+    });
+  },
+  update: async (id: string, visitData: any) => {
+    return apiRequest(`/visits/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(visitData),
+    });
+  },
+  remove: async (id: string) => {
+    return apiRequest(`/visits/${id}`, {
+      method: 'DELETE',
+    });
   },
 }; 

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Package, Clock, CheckCircle, TrendingUp, CreditCard, FileText, Phone } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { orders, products, companies, customers } from '../../data/mockData';
-import { Order, Product, OrderItem } from '../../types';
 import PlaceOrder from './PlaceOrder';
 import OrderHistory from './OrderHistory';
 import AccountStatement from './AccountStatement';
 import { customersAPI } from '../../services/api';
+import { dashboardAPI } from '../../services/api';
 
 const CustomerDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -14,40 +13,39 @@ const CustomerDashboard: React.FC = () => {
   const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<any>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    customersAPI.getMe()
-      .then(res => setCustomer(res.data || res))
-      .catch(err => setError(err.message || 'Failed to load customer'))
+    dashboardAPI.getCustomerDashboard()
+      .then(res => setDashboard(res.data))
+      .catch(err => setError(err.message || 'Failed to load dashboard'))
       .finally(() => setLoading(false));
   }, []);
-  
-  const customerOrders = orders.filter(o => o.customerId === user?.id);
   
   const stats = [
     {
       title: 'Total Orders',
-      value: customerOrders.length,
+      value: dashboard?.overview?.totalOrders ?? 0,
       icon: ShoppingCart,
       color: 'bg-purple-500'
     },
     {
       title: 'Pending Orders',
-      value: customerOrders.filter(o => o.status === 'pending').length,
+      value: dashboard?.overview?.pendingOrders ?? 0,
       icon: Clock,
       color: 'bg-yellow-500'
     },
     {
       title: 'Completed Orders',
-      value: customerOrders.filter(o => o.status === 'delivered').length,
+      value: dashboard?.overview?.deliveredOrders ?? 0,
       icon: CheckCircle,
       color: 'bg-green-500'
     },
     {
       title: 'Outstanding Amount',
-      value: `₹${customer?.outstandingAmount || 0}`,
+      value: `₹${dashboard?.profile?.outstandingAmount ?? 0}`,
       icon: CreditCard,
       color: 'bg-red-500'
     }
@@ -91,26 +89,30 @@ const CustomerDashboard: React.FC = () => {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
                 <div className="space-y-3">
-                  {customerOrders.slice(0, 5).map((order) => (
-                    <div key={order.id} className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <div>
-                        <p className="font-medium text-gray-900">{order.id}</p>
-                        <p className="text-sm text-gray-600">{order.orderDate}</p>
+                  {dashboard?.recentOrders && dashboard.recentOrders.length > 0 ? (
+                    dashboard.recentOrders.map((order: any) => (
+                      <div key={order._id} className="flex items-center justify-between py-2 border-b border-gray-100">
+                        <div>
+                          <p className="font-medium text-gray-900">{order.orderNumber || order.billNumber || '-'}</p>
+                          <p className="text-sm text-gray-600">{new Date(order.orderDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-gray-900">₹{order.netAmount}</p>
+                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                            order.status === 'delivered' ? 'bg-green-100 text-green-800' :
+                            order.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
+                            order.status === 'confirmed' ? 'bg-purple-100 text-purple-800' :
+                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900">₹{order.netAmount}</p>
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                          order.status === 'delivered' ? 'bg-green-100 text-green-800' :
-                          order.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
-                          order.status === 'confirmed' ? 'bg-purple-100 text-purple-800' :
-                          order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {order.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-center text-gray-500 py-4">No recent orders</div>
+                  )}
                 </div>
               </div>
 
@@ -119,22 +121,22 @@ const CustomerDashboard: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Credit Limit</span>
-                    <span className="font-medium text-gray-900">₹{customer?.creditLimit}</span>
+                    <span className="font-medium text-gray-900">₹{dashboard?.profile?.creditLimit}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Outstanding Amount</span>
-                    <span className="font-medium text-red-600">₹{customer?.outstandingAmount}</span>
+                    <span className="font-medium text-red-600">₹{dashboard?.profile?.outstandingAmount}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Available Credit</span>
                     <span className="font-medium text-green-600">
-                      ₹{(customer?.creditLimit || 0) - (customer?.outstandingAmount || 0)}
+                      ₹{dashboard?.profile?.availableCredit}
                     </span>
                   </div>
                   <div className="pt-4 border-t">
                     <div className="flex items-center space-x-2 text-sm text-gray-600">
                       <Phone className="h-4 w-4" />
-                      <span>Contact: {customer?.mobile}</span>
+                      <span>Contact: {dashboard?.profile?.mobile}</span>
                     </div>
                   </div>
                 </div>
