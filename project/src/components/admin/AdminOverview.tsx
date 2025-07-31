@@ -76,9 +76,9 @@ const AdminOverview: React.FC = () => {
     { label: 'Total Customers', value: overview.customers.total, icon: Users },
     { label: 'Total Products', value: overview.products.total, icon: Package },
     { label: 'Total Orders', value: overview.orders.total, icon: ShoppingCart },
-    { label: 'Revenue', value: `₹${financial.totalSales.toLocaleString()}`, icon: IndianRupee },
-    { label: 'Total Dues', value: `₹${financial.totalOutstanding.toLocaleString()}`, icon: AlertCircle },
-    { label: 'Total Collections', value: `₹${financial.totalCollections.toLocaleString()}`, icon: CalendarDays },
+    { label: 'Revenue', value: `₹${financial.totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee },
+    { label: 'Total Dues', value: `₹${financial.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: AlertCircle },
+    { label: 'Total Collections', value: `₹${financial.totalCollections.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: CalendarDays },
   ];
 
   return (
@@ -114,7 +114,7 @@ const AdminOverview: React.FC = () => {
               <div className="text-xs text-gray-500 mt-1">
                 {col.date.slice(5)}
               </div>
-              <div className="text-xs text-gray-700">₹{col.total.toLocaleString()}</div>
+              <div className="text-xs text-gray-700">₹{col.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
           ))}
         </div>

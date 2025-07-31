@@ -75,9 +75,9 @@ const BillExportLayout: React.FC<{
               <tr key={idx}>
                 <td style={{ border: '1px solid #ccc', padding: 8 }}>{product?.name || 'Unknown Product'}</td>
                 <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>{item.quantity}</td>
-                <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>₹{item.rate}</td>
+                <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>₹{item.rate.toFixed(2)}</td>
                 <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>{product?.gstRate ? `${product.gstRate}%` : ''}</td>
-                <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>₹{item.amount}</td>
+                <td style={{ border: '1px solid #ccc', padding: 8, textAlign: 'center' }}>₹{item.amount.toFixed(2)}</td>
               </tr>
             );
           })}
@@ -89,15 +89,15 @@ const BillExportLayout: React.FC<{
           <div style={{ border: '1px solid #ccc', borderRadius: 6, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #ccc' }}>
               <span style={{ fontWeight: 500 }}>Subtotal:</span>
-              <span>₹{order.totalAmount}</span>
+              <span>₹{order.totalAmount.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #ccc' }}>
               <span style={{ fontWeight: 500 }}>Total GST:</span>
-              <span>₹{order.gstAmount}</span>
+              <span>₹{order.gstAmount.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: '#f3f4f6', fontWeight: 600 }}>
               <span>Grand Total:</span>
-              <span>₹{order.netAmount}</span>
+              <span>₹{order.netAmount.toFixed(2)}</span>
             </div>
           </div>
         </div>

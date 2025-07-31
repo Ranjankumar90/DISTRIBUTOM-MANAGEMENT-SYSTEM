@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ShoppingCart, Package, Clock, CheckCircle, TrendingUp, CreditCard, FileText, Phone } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import PlaceOrder from './PlaceOrder';
-import OrderHistory from './OrderHistory';
-import AccountStatement from './AccountStatement';
+import { lazy, Suspense } from 'react';
+
+// Lazy load components for better performance
+const PlaceOrder = lazy(() => import('./PlaceOrder'));
+const OrderHistory = lazy(() => import('./OrderHistory'));
+const AccountStatement = lazy(() => import('./AccountStatement'));
 import { customersAPI } from '../../services/api';
 import { dashboardAPI } from '../../services/api';
 
@@ -15,16 +18,41 @@ const CustomerDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<any>(null);
 
-  useEffect(() => {
+  const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    dashboardAPI.getCustomerDashboard()
-      .then(res => setDashboard(res.data))
-      .catch(err => setError(err.message || 'Failed to load dashboard'))
-      .finally(() => setLoading(false));
+    try {
+      const res = await dashboardAPI.getCustomerDashboard();
+      setDashboard(res.data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  const loadCustomerData = useCallback(async () => {
+    if (!user?._id) return;
+    try {
+      const res = await customersAPI.getMe();
+      setCustomer(res.data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load customer');
+    }
+  }, [user?._id]);
+
+  useEffect(() => {
+    loadDashboardData();
+    loadCustomerData();
+  }, []);
+
+  // Auto-refresh when tab changes
+  useEffect(() => {
+    loadDashboardData();
+    loadCustomerData();
+  }, [activeTab]);
   
-  const stats = [
+  const stats = useMemo(() => [
     {
       title: 'Total Orders',
       value: dashboard?.overview?.totalOrders ?? 0,
@@ -45,11 +73,11 @@ const CustomerDashboard: React.FC = () => {
     },
     {
       title: 'Outstanding Amount',
-      value: `₹${dashboard?.profile?.outstandingAmount ?? 0}`,
+      value: `₹${(dashboard?.profile?.outstandingAmount ?? 0).toFixed(2)}`,
       icon: CreditCard,
       color: 'bg-red-500'
     }
-  ];
+  ], [dashboard]);
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
@@ -61,11 +89,23 @@ const CustomerDashboard: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'place-order':
-        return <PlaceOrder customer={customer} />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <PlaceOrder customer={customer} />
+          </Suspense>
+        );
       case 'order-history':
-        return <OrderHistory />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <OrderHistory />
+          </Suspense>
+        );
       case 'account':
-        return <AccountStatement />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <AccountStatement />
+          </Suspense>
+        );
       default:
         return (
           <div className="space-y-6">
@@ -97,7 +137,7 @@ const CustomerDashboard: React.FC = () => {
                           <p className="text-sm text-gray-600">{new Date(order.orderDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium text-gray-900">₹{order.netAmount}</p>
+                          <p className="font-medium text-gray-900">₹{order.netAmount.toFixed(2)}</p>
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                             order.status === 'delivered' ? 'bg-green-100 text-green-800' :
                             order.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
@@ -121,11 +161,11 @@ const CustomerDashboard: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Credit Limit</span>
-                    <span className="font-medium text-gray-900">₹{dashboard?.profile?.creditLimit}</span>
+                    <span className="font-medium text-gray-900">₹{dashboard?.profile?.creditLimit.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Outstanding Amount</span>
-                    <span className="font-medium text-red-600">₹{dashboard?.profile?.outstandingAmount}</span>
+                    <span className="font-medium text-red-600">₹{dashboard?.profile?.outstandingAmount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Available Credit</span>

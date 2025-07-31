@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Visit = require('../models/Visit');
+const { auth, authorize } = require('../middleware/auth');
 
 // GET /api/visits - fetch all visits
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const visits = await Visit.find()
       .populate('customerId', 'userId address')
@@ -16,7 +17,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/visits - create a new visit
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const visit = new Visit({
       ...req.body,
@@ -32,7 +33,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/visits/:id - update a visit (status or notes)
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const visit = await Visit.findById(req.params.id);
     if (!visit) {
@@ -49,7 +50,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/visits/:id - delete a visit
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const visit = await Visit.findByIdAndDelete(req.params.id);
     if (!visit) {

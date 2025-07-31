@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Eye, Download, Package, Clock, CheckCircle, XCircle, Truck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { ordersAPI, productsAPI } from '../../services/api';
+import { ordersAPI, productsAPI, customersAPI } from '../../services/api';
 import { Order, Product } from '../../types';
 
 const OrderHistory: React.FC = () => {
@@ -11,24 +11,59 @@ const OrderHistory: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadCustomerData = async () => {
     if (!user?._id) return;
+    try {
+      const res = await customersAPI.getMe();
+      setCustomer(res.data);
+      console.log('Customer data:', res.data);
+    } catch (err: any) {
+      console.error('Error fetching customer:', err);
+      setError(err.message || 'Failed to load customer data');
+    }
+  };
+
+  const loadOrdersData = async () => {
+    if (!customer?._id) return;
     setLoading(true);
     setError(null);
-    Promise.all([
-      ordersAPI.getAll({ customerId: user._id }),
-      productsAPI.getAll()
-    ])
-      .then(([ordersData, productsData]) => {
-        setOrders(ordersData.data || []);
-        setProducts(productsData.data || []);
-      })
-      .catch((err) => setError(err.message || 'Failed to load order history'))
-      .finally(() => setLoading(false));
+    console.log('Fetching orders for customer ID:', customer._id);
+    try {
+      const [ordersData, productsData] = await Promise.all([
+        ordersAPI.getAll({ customerId: customer._id }),
+        productsAPI.getAll()
+      ]);
+      console.log('Orders response:', ordersData);
+      console.log('Products response:', productsData);
+      setOrders(ordersData.data || []);
+      setProducts(productsData.data || []);
+    } catch (err: any) {
+      console.error('Error fetching orders:', err);
+      setError(err.message || 'Failed to load order history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // First, get the customer data
+  useEffect(() => {
+    loadCustomerData();
   }, [user?._id]);
+
+  // Then, get orders using customer ID
+  useEffect(() => {
+    loadOrdersData();
+  }, [customer?._id]);
+
+  // Auto-refresh when component mounts or when user navigates back to this tab
+  useEffect(() => {
+    loadCustomerData();
+    loadOrdersData();
+  }, []);
 
   const filteredOrders = orders.filter(order => {
     const matchesSearch = order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -206,13 +241,13 @@ const OrderHistory: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {order.orderDate}
+                    {new Date(order.orderDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {order.items.length} item(s)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{order.netAmount}
+                    ₹{order.netAmount.toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(order.status)}`}>
@@ -336,8 +371,8 @@ const OrderDetailsModal: React.FC<{
                     <tr key={idx}>
                       <td className="px-4 py-2">{getProductName(typeof item.productId === 'string' ? item.productId : (item.productId as any)._id)}</td>
                       <td className="px-4 py-2">{item.quantity}</td>
-                      <td className="px-4 py-2">{item.rate}</td>
-                      <td className="px-4 py-2">{item.amount}</td>
+                      <td className="px-4 py-2">₹{item.rate.toFixed(2)}</td>
+                      <td className="px-4 py-2">₹{item.amount.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -349,15 +384,15 @@ const OrderDetailsModal: React.FC<{
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
                 <label className="block font-medium text-gray-500">Subtotal</label>
-                <p className="text-gray-900">₹{order.totalAmount}</p>
+                <p className="text-gray-900">₹{order.totalAmount.toFixed(2)}</p>
               </div>
               <div>
                 <label className="block font-medium text-gray-500">GST</label>
-                <p className="text-gray-900">₹{order.gstAmount}</p>
+                <p className="text-gray-900">₹{order.gstAmount.toFixed(2)}</p>
               </div>
               <div>
                 <label className="block font-medium text-gray-900">Total</label>
-                <p className="text-lg font-bold text-gray-900">₹{order.netAmount}</p>
+                <p className="text-lg font-bold text-gray-900">₹{order.netAmount.toFixed(2)}</p>
               </div>
             </div>
           </div>

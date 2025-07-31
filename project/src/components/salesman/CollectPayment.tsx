@@ -7,7 +7,7 @@ import { Customer, Collection } from '../../types';
 
 const CollectPayment: React.FC = () => {
   const { user } = useAuth();
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [amount, setAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState<Collection['paymentMode']>('cash');
   const [reference, setReference] = useState('');
@@ -16,7 +16,8 @@ const CollectPayment: React.FC = () => {
   const [collections, setCollections] = useState<any[]>([]);
 
   useEffect(() => {
-    customersAPI.getAll().then(res => setCustomers(res.data || []));
+    // Use the new API to get customers with ledger-based outstanding amounts
+    customersAPI.getWithOutstanding().then(res => setCustomers(res.data || []));
     // Fetch recent collections for this salesman
     collectionsAPI.getAll().then(res => setCollections(res.data || []));
   }, []);
@@ -40,15 +41,21 @@ const CollectPayment: React.FC = () => {
     try {
       console.log('Collection data:', collection);
       await collectionsAPI.create(collection);
-      alert(`Payment collected from ${selectedCustomer.userId.name}!\nAmount: ₹${amount}\nMode: ${paymentMode}`);
+      alert(`Payment collected from ${selectedCustomer.user?.name}!\nAmount: ₹${amount}\nMode: ${paymentMode}`);
       // Reset form
       setSelectedCustomer(null);
       setAmount('');
       setReference('');
       setPaymentMode('cash');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Payment collection error:', err);
-      alert('Payment collection failed. See console for details.');
+      if (err.backend && err.backend.error) {
+        alert('Payment collection failed: ' + err.backend.error);
+      } else if (err && err.message) {
+        alert('Payment collection failed: ' + err.message);
+      } else {
+        alert('Payment collection failed. See console for details.');
+      }
     }
   };
 
@@ -76,7 +83,7 @@ const CollectPayment: React.FC = () => {
           className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
         >
           <User className="h-5 w-5" />
-          <span>{selectedCustomer ? selectedCustomer.userId.name : 'Select Customer'}</span>
+          <span>{selectedCustomer ? selectedCustomer.user.name : 'Select Customer'}</span>
         </button>
       </div>
 
@@ -99,7 +106,7 @@ const CollectPayment: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-500">Customer Name</label>
-                <p className="text-gray-900 font-medium">{selectedCustomer.userId.name}</p>
+                <p className="text-gray-900 font-medium">{selectedCustomer.user.name}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-500">Address</label>
@@ -107,16 +114,16 @@ const CollectPayment: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-500">Mobile</label>
-                <p className="text-gray-900">{selectedCustomer.userId.mobile}</p>
+                <p className="text-gray-900">{selectedCustomer.user.mobile}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Credit Limit</label>
-                  <p className="text-gray-900 font-medium">₹{selectedCustomer.creditLimit}</p>
+                  <p className="text-gray-900 font-medium">₹{selectedCustomer.creditLimit.toFixed(2)}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500">Outstanding</label>
-                  <p className="text-red-600 font-medium">₹{selectedCustomer.outstandingAmount}</p>
+                  <p className="text-red-600 font-medium">₹{selectedCustomer.outstandingAmount.toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -250,15 +257,15 @@ const CollectPayment: React.FC = () => {
 };
 
 const CustomerSelectModal: React.FC<{
-  customers: Customer[];
-  onSelect: (customer: Customer) => void;
+  customers: any[];
+  onSelect: (customer: any) => void;
   onClose: () => void;
 }> = ({ customers, onSelect, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredCustomers = customers.filter(customer =>
-    customer.userId.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.userId.mobile.includes(searchTerm)
+    customer.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.user.mobile.includes(searchTerm)
   );
 
   return (
@@ -294,13 +301,13 @@ const CustomerSelectModal: React.FC<{
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <h4 className="font-medium text-gray-900">{customer.userId.name}</h4>
+                  <h4 className="font-medium text-gray-900">{customer.user.name}</h4>
                   <p className="text-sm text-gray-600">{customer.address}</p>
-                  <p className="text-sm text-gray-600">{customer.userId.mobile}</p>
+                  <p className="text-sm text-gray-600">{customer.user.mobile}</p>
                 </div>
                 <div className="text-right text-sm">
-                  <p className="text-gray-600">Credit: ₹{customer.creditLimit}</p>
-                  <p className="text-red-600">Outstanding: ₹{customer.outstandingAmount}</p>
+                  <p className="text-gray-600">Credit: ₹{customer.creditLimit.toFixed(2)}</p>
+                  <p className="text-red-600">Outstanding: ₹{customer.outstandingAmount.toFixed(2)}</p>
                 </div>
               </div>
             </div>

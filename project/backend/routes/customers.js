@@ -1,6 +1,7 @@
 const express = require('express');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
+const LedgerEntry = require('../models/LedgerEntry');
 const { auth, authorize } = require('../middleware/auth');
 const { validateUser, validateCustomer } = require('../middleware/validation');
 
@@ -98,6 +99,84 @@ router.get('/me', auth, authorize('customer'), async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+// @route   GET /api/customers/with-outstanding
+// @desc    Get customers with outstanding amounts calculated from ledger entries
+// @access  Private
+router.get('/with-outstanding', auth, async (req, res) => {
+  try {
+    // Get all customers with populated user data
+    const customers = await Customer.find()
+      .populate('userId', 'name mobile email')
+      .lean();
+
+    // Calculate outstanding amounts for each customer from ledger entries
+    const customersWithOutstanding = await Promise.all(
+      customers.map(async (customer) => {
+        // Calculate outstanding amount from ledger entries
+        const totalDebits = await LedgerEntry.aggregate([
+          {
+            $match: {
+              customerId: customer._id,
+              type: { $in: ['debit', 'order'] }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$amount' }
+            }
+          }
+        ]);
+
+        const totalCredits = await LedgerEntry.aggregate([
+          {
+            $match: {
+              customerId: customer._id,
+              type: { $in: ['credit', 'payment'] }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$amount' }
+            }
+          }
+        ]);
+
+        const outstandingAmount = Math.max(0, 
+          (totalDebits[0]?.total || 0) - (totalCredits[0]?.total || 0)
+        );
+
+        return {
+          _id: customer._id,
+          address: customer.address,
+          creditLimit: customer.creditLimit,
+          outstandingAmount,
+          user: customer.userId
+        };
+      })
+    );
+
+    // Sort by outstanding amount (highest first)
+    customersWithOutstanding.sort((a, b) => b.outstandingAmount - a.outstandingAmount);
+
+    res.json({
+      success: true,
+      data: customersWithOutstanding
+    });
+  } catch (error) {
+    console.error('Get customers with outstanding error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+
 
 // @route   GET /api/customers/:id
 // @desc    Get single customer

@@ -16,6 +16,11 @@ const CustomerManagement: React.FC = () => {
     fetchCustomers();
   }, []);
 
+  // Auto-refresh when component mounts or when user navigates back to this tab
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
@@ -161,7 +166,7 @@ const CustomerManagement: React.FC = () => {
                     ₹{customer.creditLimit?.toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{customer.outstandingAmount?.toLocaleString()}
+                    ₹{customer.outstandingAmount?.toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
@@ -442,18 +447,18 @@ const CustomerDetailsModal: React.FC<{
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-500">Credit Limit</label>
-              <p className="text-gray-900">₹{customer.creditLimit?.toLocaleString()}</p>
+              <p className="text-gray-900">₹{customer.creditLimit?.toFixed(2)}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">Outstanding</label>
-              <p className="text-gray-900">₹{customer.outstandingAmount?.toLocaleString()}</p>
+              <p className="text-gray-900">₹{customer.outstandingAmount?.toFixed(2)}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-500">Available Credit</label>
-              <p className="text-green-600 font-medium">₹{(customer.creditLimit - customer.outstandingAmount)?.toLocaleString()}</p>
+              <p className="text-green-600 font-medium">₹{(customer.creditLimit - customer.outstandingAmount)?.toFixed(2)}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">Status</label>

@@ -35,6 +35,7 @@ const SalesmanLedger: React.FC = () => {
             setLoading(false);
           })
           .catch((err: any) => {
+            console.error('Ledger fetch error:', err);
             setError('Failed to fetch ledger entries');
             setLoading(false);
           });
@@ -51,6 +52,7 @@ const SalesmanLedger: React.FC = () => {
             setLoading(false);
           })
           .catch((err: any) => {
+            console.error('Ledger fetch error:', err);
             setError('Failed to fetch ledger entries');
             setLoading(false);
           });
@@ -68,6 +70,7 @@ const SalesmanLedger: React.FC = () => {
           setLoading(false);
         })
         .catch((err: any) => {
+          console.error('Ledger fetch error:', err);
           setError('Failed to fetch ledger entries');
           setLoading(false);
         });
@@ -90,12 +93,20 @@ const SalesmanLedger: React.FC = () => {
   });
 
   const getRunningBalance = (upToIndex: number) => {
-    const customerEntries = ledgerEntries.slice(0, upToIndex + 1);
+    // Use sortedEntries instead of ledgerEntries for correct calculation
+    const customerEntries = sortedEntries.slice(0, upToIndex + 1);
     return customerEntries.reduce((balance, entry) => {
       const amount = entry.amount || 0;
-      return entry.type === 'debit' || entry.type === 'order'
-        ? balance + amount
-        : balance - amount;
+      if (entry.type === 'debit' || entry.type === 'order') {
+        return balance + amount;
+      } else if (entry.type === 'credit' || entry.type === 'payment') {
+        return balance - amount;
+      } else if (entry.type === 'adjustment') {
+        return balance + amount; // adjustment can be +/- based on context
+      } else if (entry.type === 'opening_balance') {
+        return amount; // overrides previous
+      }
+      return balance;
     }, 0);
   };
 
@@ -198,10 +209,10 @@ const SalesmanLedger: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm capitalize">{entry.type}</td>
                       <td className="px-6 py-4 text-right text-sm text-red-600">
-                        {(entry.type === 'debit' || entry.type === 'order') && `₹${entry.amount}`}
+                        {(entry.type === 'debit' || entry.type === 'order') && `₹${entry.amount.toFixed(2)}`}
                       </td>
                       <td className="px-6 py-4 text-right text-sm text-green-600">
-                        {(entry.type === 'credit' || entry.type === 'payment') && `₹${entry.amount}`}
+                        {(entry.type === 'credit' || entry.type === 'payment') && `₹${entry.amount.toFixed(2)}`}
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
                         <span className={balance > 0 ? 'text-red-600' : 'text-green-600'}>

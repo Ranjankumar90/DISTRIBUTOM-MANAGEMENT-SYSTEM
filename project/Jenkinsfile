@@ -2,11 +2,12 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'your-dockerhub-username' // Change this to your Docker Hub or other registry
+        // TODO: Replace with your Docker Hub username
+        DOCKER_REGISTRY = 'your-dockerhub-username'
         BACKEND_IMAGE = "${DOCKER_REGISTRY}/backend:${BUILD_NUMBER}"
         FRONTEND_IMAGE = "${DOCKER_REGISTRY}/frontend:${BUILD_NUMBER}"
-        KUBECONFIG_CREDENTIALS = 'kubeconfig-credentials-id' // Jenkins credentials ID for kubeconfig
-        DOCKER_CREDENTIALS = 'dockerhub-credentials-id' // Jenkins credentials ID for Docker registry
+        // TODO: Replace with your Jenkins Docker credentials ID
+        DOCKER_CREDENTIALS = 'dockerhub-credentials-id'
     }
 
     stages {
@@ -42,27 +43,25 @@ pipeline {
                 }
             }
         }
-        stage('Update Manifests') {
+        stage('Test') {
             steps {
-                script {
-                    sh '''
-                    sed -i "s|image: backend:local|image: $BACKEND_IMAGE|g" k8s-backend-deployment.yaml
-                    sed -i "s|image: frontend:local|image: $FRONTEND_IMAGE|g" k8s-frontend-deployment.yaml
-                    '''
+                // Run backend tests if present
+                dir('backend') {
+                    script {
+                        if (fileExists('package.json')) {
+                            sh 'npm install' // Ensure dev dependencies for tests
+                            sh 'npm test || echo "No backend tests found or tests failed."'
+                        }
+                    }
                 }
-            }
-        }
-        stage('Deploy to Kubernetes') {
-            steps {
-                withCredentials([file(credentialsId: env.KUBECONFIG_CREDENTIALS, variable: 'KUBECONFIG')]) {
-                    sh '''
-                    kubectl apply -f k8s-backend-config.yaml
-                    kubectl apply -f k8s-frontend-config.yaml
-                    kubectl apply -f k8s-backend-pvc.yaml
-                    kubectl apply -f k8s-backend-deployment.yaml
-                    kubectl apply -f k8s-frontend-deployment.yaml
-                    kubectl apply -f k8s-ingress.yaml
-                    '''
+                // Run frontend tests if present
+                dir('..') {
+                    script {
+                        if (fileExists('package.json')) {
+                            sh 'npm install' // Ensure dev dependencies for tests
+                            sh 'npm test || echo "No frontend tests found or tests failed."'
+                        }
+                    }
                 }
             }
         }

@@ -21,6 +21,11 @@ const ProductManagement: React.FC = () => {
     fetchData();
   }, []);
 
+  // Auto-refresh when component mounts or when user navigates back to this tab
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const fetchData = async () => {
     setIsLoading(true);
     setError(null);
@@ -309,8 +314,8 @@ const ProductManagement: React.FC = () => {
                         <div className="text-sm text-gray-500">Min: {product.minStockLevel}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">₹{product.saleRate}</div>
-                        <div className="text-sm text-gray-500">MRP: ₹{product.mrp}</div>
+                        <div className="text-sm text-gray-900">₹{product.saleRate.toFixed(2)}</div>
+                        <div className="text-sm text-gray-500">MRP: ₹{product.mrp.toFixed(2)}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
@@ -424,8 +429,8 @@ const ProductManagement: React.FC = () => {
                           <div className="text-sm text-gray-500">Min: {product.minStockLevel}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">₹{product.saleRate}</div>
-                          <div className="text-sm text-gray-500">MRP: ₹{product.mrp}</div>
+                          <div className="text-sm text-gray-900">₹{product.saleRate.toFixed(2)}</div>
+                          <div className="text-sm text-gray-500">MRP: ₹{product.mrp.toFixed(2)}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${

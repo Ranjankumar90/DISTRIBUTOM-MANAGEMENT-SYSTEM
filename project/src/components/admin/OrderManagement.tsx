@@ -7,7 +7,6 @@ import GSTBillModal from './GSTBilling';
 import html2pdf from 'html2pdf.js';
 import { useRef } from 'react';
 import PDFDocument from 'pdfkit';
-import blobStream from 'blob-stream';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import BillExportLayout from './BillExportLayout';
@@ -28,28 +27,34 @@ const OrderManagement: React.FC = () => {
   const [selectedBillCustomer, setSelectedBillCustomer] = useState<any>(null);
   const [shouldExportPDF, setShouldExportPDF] = useState(false);
 
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [orderRes, customerRes, productRes, companyRes] = await Promise.all([
+        ordersAPI.getAll(),
+        customersAPI.getWithOutstanding(),
+        productsAPI.getAll(),
+        companiesAPI.getAll()
+      ]);
+      setOrders(orderRes.data || orderRes || []);
+      setCustomers(customerRes.data || customerRes || []);
+      setProducts(productRes.data || productRes || []);
+      setCompanies(companyRes.data || companyRes || []);
+      console.log('Products loaded:', productRes.data || productRes || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load order management data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [orderRes, customerRes, productRes, companyRes] = await Promise.all([
-          ordersAPI.getAll(),
-          customersAPI.getAll(),
-          productsAPI.getAll(),
-          companiesAPI.getAll()
-        ]);
-        setOrders(orderRes.data || orderRes || []);
-        setCustomers(customerRes.data || customerRes || []);
-        setProducts(productRes.data || productRes || []);
-        setCompanies(companyRes.data || companyRes || []);
-        console.log('Products loaded:', productRes.data || productRes || []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load order management data');
-      } finally {
-        setLoading(false);
-      }
-    };
+    fetchData();
+  }, []);
+
+  // Auto-refresh when component mounts or when user navigates back to this tab
+  useEffect(() => {
     fetchData();
   }, []);
 
@@ -65,13 +70,16 @@ const OrderManagement: React.FC = () => {
       return order.counterSellDetails.name;
     }
     if (customerId && typeof customerId === 'object') {
+      if (customerId.user && typeof customerId.user === 'object') {
+        return customerId.user.name || 'Unknown Customer';
+      }
       if (customerId.userId && typeof customerId.userId === 'object') {
         return customerId.userId.name || 'Unknown Customer';
       }
       return customerId.name || 'Unknown Customer';
     }
     const customer = (customers as any[]).find((c: any) => c._id === customerId);
-    return customer?.name || 'Unknown Customer';
+    return customer?.user?.name || customer?.name || 'Unknown Customer';
   };
 
   const getProductName = (productId: any) => {
@@ -84,7 +92,16 @@ const OrderManagement: React.FC = () => {
   };
 
   const getCustomerDetails = (customerId: string) => {
-    return customers.find((c: any) => c._id === customerId || c.id === customerId);
+    const customer = customers.find((c: any) => c._id === customerId || c.id === customerId);
+    // Return customer with proper structure for the bill export
+    if (customer) {
+      return {
+        ...customer,
+        name: customer.user?.name || customer.name,
+        mobile: customer.user?.mobile || customer.mobile
+      };
+    }
+    return customer;
   };
   const getProductDetails = (productId: string) => {
     return products.find((p: any) => p._id === productId || p.id === productId);
@@ -122,6 +139,29 @@ const OrderManagement: React.FC = () => {
     }
   };
 
+  const exportOrders = () => {
+    const csvRows = [
+      ['Order ID', 'Customer Name', 'Date', 'Amount', 'Status', 'Bill Number'],
+      ...filteredOrders.map(order => [
+        order._id,
+        getCustomerName(typeof order.customerId === 'object' && order.customerId !== null ? order.customerId : order.customerId, order),
+        order.orderDate,
+        `₹${order.netAmount.toFixed(2)}`,
+        order.status,
+        order.billNumber || '-'
+      ])
+    ];
+    
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "orders_export.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDownloadBill = (order: any) => {
     let customer = null;
     if (order.counterSell && order.counterSellDetails) {
@@ -152,7 +192,15 @@ const OrderManagement: React.FC = () => {
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Invoice-${selectedBillOrder?.billNumber || selectedBillOrder?._id}.pdf`);
+        
+        // Generate filename with customer name and date
+        const customerName = selectedBillCustomer?.user?.name || selectedBillCustomer?.name || 'Unknown';
+        const orderDate = selectedBillOrder?.orderDate ? new Date(selectedBillOrder.orderDate) : new Date();
+        const dateStr = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+        const sanitizedCustomerName = customerName.replace(/[^a-zA-Z0-9]/g, '_'); // Remove special characters
+        const fileName = `Order_Invoice_${sanitizedCustomerName}_${dateStr}.pdf`;
+        
+        pdf.save(fileName);
       }
     };
     if (shouldExportPDF && selectedBillOrder && selectedBillCustomer) {
@@ -173,7 +221,10 @@ const OrderManagement: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Order Management</h2>
-        <button className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 flex items-center space-x-2">
+        <button 
+          onClick={exportOrders}
+          className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 flex items-center space-x-2"
+        >
           <Download className="h-5 w-5" />
           <span>Export Orders</span>
         </button>
@@ -250,7 +301,7 @@ const OrderManagement: React.FC = () => {
                     {order.orderDate}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{order.netAmount}
+                    ₹{order.netAmount.toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <select
@@ -508,8 +559,8 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ order, onClose, g
                         <span>{item.quantity}</span>
                       )}
                     </td>
-                    <td className="py-2 px-2 align-top w-1/6">₹{item.rate}</td>
-                    <td className="py-2 px-2 align-top w-1/6">₹{item.amount}</td>
+                    <td className="py-2 px-2 align-top w-1/6">₹{item.rate.toFixed(2)}</td>
+                    <td className="py-2 px-2 align-top w-1/6">₹{item.amount.toFixed(2)}</td>
                     {editMode && (
                       <td className="py-2 px-2 align-top w-1/6">
                         <button onClick={() => handleRemoveItem(idx)} className="text-xs text-red-500 hover:text-red-700 px-2 py-1 border border-red-200 rounded transition-all">Remove</button>
@@ -529,15 +580,15 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ order, onClose, g
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
               <label className="block font-medium text-gray-500">Total Amount</label>
-              <p className="text-gray-900">₹{totalAmount}</p>
+              <p className="text-gray-900">₹{totalAmount.toFixed(2)}</p>
             </div>
             <div>
               <label className="block font-medium text-gray-500">GST Amount</label>
-              <p className="text-gray-900">₹{gstAmount}</p>
+              <p className="text-gray-900">₹{gstAmount.toFixed(2)}</p>
             </div>
             <div>
               <label className="block font-medium text-gray-900">Net Amount</label>
-              <p className="text-lg font-bold text-gray-900">₹{netAmount}</p>
+              <p className="text-lg font-bold text-gray-900">₹{netAmount.toFixed(2)}</p>
             </div>
           </div>
         </div>
@@ -696,8 +747,8 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, products, onClos
                         className="w-16 px-2 py-1 border rounded text-right"
                       />
                     </td>
-                    <td>₹{item.rate}</td>
-                    <td>₹{item.amount}</td>
+                    <td>₹{item.rate.toFixed(2)}</td>
+                    <td>₹{item.amount.toFixed(2)}</td>
                     <td><button onClick={() => handleRemoveItem(idx)} className="text-red-600 hover:text-red-900">Remove</button></td>
                   </tr>
                 );
@@ -710,15 +761,15 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, products, onClos
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
               <label className="block font-medium text-gray-500">Total Amount</label>
-              <p className="text-gray-900">₹{totalAmount}</p>
+              <p className="text-gray-900">₹{totalAmount.toFixed(2)}</p>
             </div>
             <div>
               <label className="block font-medium text-gray-500">GST Amount</label>
-              <p className="text-gray-900">₹{gstAmount}</p>
+              <p className="text-gray-900">₹{gstAmount.toFixed(2)}</p>
             </div>
             <div>
               <label className="block font-medium text-gray-900">Net Amount</label>
-              <p className="text-lg font-bold text-gray-900">₹{netAmount}</p>
+              <p className="text-lg font-bold text-gray-900">₹{netAmount.toFixed(2)}</p>
             </div>
           </div>
         </div>
@@ -831,9 +882,9 @@ const BlueBillModal: React.FC<{
                   <tr key={idx}>
                     <td className="border px-2 py-1">{product?.name || 'Unknown Product'}</td>
                     <td className="border px-2 py-1 text-center">{item.quantity}</td>
-                    <td className="border px-2 py-1 text-center">₹{item.rate}</td>
+                    <td className="border px-2 py-1 text-center">₹{item.rate.toFixed(2)}</td>
                     <td className="border px-2 py-1 text-center">{product?.gstRate ? `${product.gstRate}%` : ''}</td>
-                    <td className="border px-2 py-1 text-center">₹{item.amount}</td>
+                    <td className="border px-2 py-1 text-center">₹{item.amount.toFixed(2)}</td>
                   </tr>
                 );
               })}
@@ -845,15 +896,15 @@ const BlueBillModal: React.FC<{
               <div className="border border-gray-300">
                 <div className="flex justify-between px-4 py-2 border-b border-gray-300">
                   <span className="text-sm font-medium">Subtotal:</span>
-                  <span className="text-sm">₹{order.totalAmount}</span>
+                  <span className="text-sm">₹{order.totalAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between px-4 py-2 border-b border-gray-300">
                   <span className="text-sm font-medium">Total GST:</span>
-                  <span className="text-sm">₹{order.gstAmount}</span>
+                  <span className="text-sm">₹{order.gstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between px-4 py-2 bg-gray-50 font-semibold">
                   <span className="text-sm">Grand Total:</span>
-                  <span className="text-sm">₹{order.netAmount}</span>
+                  <span className="text-sm">₹{order.netAmount.toFixed(2)}</span>
                 </div>
               </div>
             </div>

@@ -23,7 +23,7 @@ const GSTBilling: React.FC = () => {
       try {
         const [orderRes, customerRes, productRes, companyRes] = await Promise.all([
           ordersAPI.getAll(),
-          customersAPI.getAll(),
+          customersAPI.getWithOutstanding(),
           productsAPI.getAll(),
           companiesAPI.getAll()
         ]);
@@ -51,10 +51,10 @@ const GSTBilling: React.FC = () => {
     // Get customer name for search
     let customerName = '';
     if (typeof order.customerId === 'object' && order.customerId !== null) {
-      customerName = order.customerId.userId?.name || '';
+      customerName = order.customerId.user?.name || order.customerId.userId?.name || '';
     } else {
       const customer = getCustomerDetails(order.customerId);
-      customerName = customer?.userId?.name || customer?.name || '';
+      customerName = customer?.user?.name || customer?.userId?.name || customer?.name || '';
     }
     const matchesSearch =
       (order.id || order._id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -79,7 +79,7 @@ const GSTBilling: React.FC = () => {
         const customer = getCustomerDetails(order.customerId);
         return [
           order.id || order._id,
-          customer?.userId?.name || '',
+          customer?.user?.name || customer?.userId?.name || '',
           order.orderDate,
           order.totalAmount,
           order.gstAmount,
@@ -198,13 +198,13 @@ const GSTBilling: React.FC = () => {
                       {order.orderDate}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{order.totalAmount}
+                      ₹{order.totalAmount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{order.gstAmount}
+                      ₹{order.gstAmount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ₹{order.netAmount}
+                      ₹{order.netAmount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
@@ -258,10 +258,37 @@ const GSTBillModal: React.FC<{
   };
 
   const billRef = useRef<any>(null);
+  
+  // Generate filename with customer name and date
+  const generateFileName = () => {
+    const customerName = customer?.user?.name || customer?.name || 'Unknown';
+    const orderDate = new Date(order.orderDate);
+    const dateStr = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const sanitizedCustomerName = customerName.replace(/[^a-zA-Z0-9]/g, '_'); // Remove special characters
+    return `GST_Invoice_${sanitizedCustomerName}_${dateStr}.pdf`;
+  };
+
   const handlePrint = useReactToPrint({
     contentRef: billRef,
     pageStyle: '@media print { body { -webkit-print-color-adjust: exact; } }',
   });
+
+  const handleDownload = () => {
+    if (billRef.current) {
+      const htmlContent = billRef.current.outerHTML;
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = generateFileName();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      URL.revokeObjectURL(url);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 print:hidden">
@@ -270,11 +297,18 @@ const GSTBillModal: React.FC<{
           <h3 className="text-lg font-semibold text-gray-900">GST Invoice</h3>
           <div className="flex space-x-3">
             <button
-              onClick={handlePrint}
+              onClick={handleDownload}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
             >
               <Download className="h-4 w-4" />
-              <span>Print/Download</span>
+              <span>Download PDF</span>
+            </button>
+            <button
+              onClick={handlePrint}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            >
+              <Download className="h-4 w-4" />
+              <span>Print</span>
             </button>
             <button
               onClick={onClose}
@@ -305,10 +339,10 @@ const GSTBillModal: React.FC<{
             <div>
               <h3 className="font-semibold text-gray-900 mb-2">To:</h3>
               <div className="text-sm text-gray-700">
-                <p className="font-medium">{customer?.name || 'Unknown Customer'}</p>
+                <p className="font-medium">{customer?.user?.name || customer?.name || 'Unknown Customer'}</p>
                 <p>{customer?.address || ''}</p>
                 {customer?.gstNumber && <p>GST No: {customer.gstNumber}</p>}
-                <p>Phone: {customer?.mobile || ''}</p>
+                <p>Phone: {customer?.user?.mobile || customer?.mobile || ''}</p>
               </div>
             </div>
           </div>
@@ -367,10 +401,10 @@ const GSTBillModal: React.FC<{
                       <td className="border border-gray-300 px-4 py-2 text-sm">{index + 1}</td>
                       <td className="border border-gray-300 px-4 py-2 text-sm">{product?.name}</td>
                       <td className="border border-gray-300 px-4 py-2 text-sm text-center">{item.quantity}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.rate}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.amount}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.rate.toFixed(2)}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.amount.toFixed(2)}</td>
                       <td className="border border-gray-300 px-4 py-2 text-sm text-right">{product?.gstRate}%</td>
-                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.gstAmount}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{item.gstAmount.toFixed(2)}</td>
                       <td className="border border-gray-300 px-4 py-2 text-sm text-right">₹{(item.amount + item.gstAmount).toFixed(2)}</td>
                     </tr>
                   );
@@ -384,15 +418,15 @@ const GSTBillModal: React.FC<{
               <div className="border border-gray-300">
                 <div className="flex justify-between px-4 py-2 border-b border-gray-300">
                   <span className="text-sm font-medium">Subtotal:</span>
-                  <span className="text-sm">₹{order.totalAmount}</span>
+                  <span className="text-sm">₹{order.totalAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between px-4 py-2 border-b border-gray-300">
                   <span className="text-sm font-medium">Total GST:</span>
-                  <span className="text-sm">₹{order.gstAmount}</span>
+                  <span className="text-sm">₹{order.gstAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between px-4 py-2 bg-gray-50 font-semibold">
                   <span className="text-sm">Grand Total:</span>
-                  <span className="text-sm">₹{order.netAmount}</span>
+                  <span className="text-sm">₹{order.netAmount.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -417,6 +451,6 @@ const GSTBillModal: React.FC<{
       </div>
     </div>
   );
-};
-
-export default GSTBilling;
+  };
+  
+  export default GSTBilling;

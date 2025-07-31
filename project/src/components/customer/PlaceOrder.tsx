@@ -221,11 +221,11 @@ const PlaceOrder: React.FC<PlaceOrderProps> = ({ customer }) => {
                 <div className="space-y-2 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">MRP:</span>
-                    <span className="line-through text-gray-500">₹{product.mrp}</span>
+                    <span className="line-through text-gray-500">₹{product.mrp.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Sale Rate:</span>
-                    <span className="font-medium text-gray-900">₹{product.saleRate}</span>
+                    <span className="font-medium text-gray-900">₹{product.saleRate.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">GST:</span>

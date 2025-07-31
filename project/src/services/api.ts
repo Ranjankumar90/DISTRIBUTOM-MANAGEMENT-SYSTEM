@@ -1,32 +1,72 @@
 export const API_BASE_URL = 'http://localhost:5000/api';
 
+// Simple cache for API responses
+const cache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
+
+const getCachedResponse = (key: string) => {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedResponse = (key: string, data: any) => {
+  cache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
+// Function to clear cache
+export const clearCache = () => {
+  cache.clear();
+};
+
+// Function to clear specific cache entries
+export const clearCacheFor = (pattern: string) => {
+  for (const key of cache.keys()) {
+    if (key.includes(pattern)) {
+      cache.delete(key);
+    }
+  }
+};
+
 const apiRequest = async (endpoint: string, config: RequestInit = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...config.headers as Record<string, string>,
-  };
   const token = localStorage.getItem('token');
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  try {
-    const response = await fetch(url, { ...config, headers });
-    const data = await response.json();
-
-    if (!response.ok) {
-      // Attach the full backend error response to the thrown error
-      const error = new Error(data.message || 'API request failed');
-      (error as any).backend = data;
-      throw error;
+  
+  // Check cache for GET requests
+  if (!config.method || config.method === 'GET') {
+    const cached = getCachedResponse(url);
+    if (cached) {
+      return cached;
     }
-
-    return data;
-  } catch (error) {
-    console.error('API Error:', error);
-    throw error;
   }
+
+  const response = await fetch(url, {
+    ...config,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...config.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Network error' }));
+    throw new Error(error.message || `HTTP error! status: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Cache GET responses
+  if (!config.method || config.method === 'GET') {
+    setCachedResponse(url, data);
+  }
+  
+  return data;
 };
 
 export const authAPI = {
@@ -112,6 +152,10 @@ export const customersAPI = {
     const queryParams = new URLSearchParams(params);
     const endpoint = queryParams.toString() ? `/customers?${queryParams}` : '/customers';
     return apiRequest(endpoint);
+  },
+
+  getWithOutstanding: async () => {
+    return apiRequest('/customers/with-outstanding');
   },
 
   getById: async (id: string) => {

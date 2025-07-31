@@ -1,64 +1,145 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Users, ShoppingCart, DollarSign, Target, TrendingUp, MapPin, Calendar, Phone, Package } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { ordersAPI, customersAPI, collectionsAPI, salesmenAPI } from '../../services/api';
-import TakeOrder from './TakeOrder';
-import CollectPayment from './CollectPayment';
-import CustomerVisits from './CustomerVisits';
-import SalesReport from './SalesReport';
-import SalesmanProductManagement from './SalesmanProductManagement';
-import SalesmanLedger from './SalesmanLedger';
+import { dashboardAPI, ordersAPI, customersAPI, collectionsAPI, salesmenAPI } from '../../services/api';
+import { lazy, Suspense } from 'react';
+
+// Lazy load components for better performance
+const TakeOrder = lazy(() => import('./TakeOrder'));
+const CollectPayment = lazy(() => import('./CollectPayment'));
+const CustomerVisits = lazy(() => import('./CustomerVisits'));
+const SalesReport = lazy(() => import('./SalesReport'));
+const SalesmanProductManagement = lazy(() => import('./SalesmanProductManagement'));
+const SalesmanLedger = lazy(() => import('./SalesmanLedger'));
 
 const SalesmanDashboard: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [dashboard, setDashboard] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
   const [salesmen, setSalesmen] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Load dashboard data first (most important)
+      const dashboardRes = await dashboardAPI.getSalesmanDashboard();
+      setDashboard(dashboardRes.data);
+
+      // Load additional data in parallel with optimized queries
+      const [orderRes, customerRes, collectionRes, salesmenRes] = await Promise.all([
+        ordersAPI.getAll({ limit: 50 }), // Limit recent orders
+        customersAPI.getAll({ limit: 100 }), // Limit customers
+        collectionsAPI.getAll({ limit: 50 }), // Limit recent collections
+        salesmenAPI.getAll()
+      ]);
+      
+      setOrders(orderRes.data || []);
+      setCustomers(customerRes.data || []);
+      setCollections(collectionRes.data || []);
+      setSalesmen(salesmenRes.data || []);
+    } catch (err: any) {
+      console.error('Dashboard loading error:', err);
+      setError(err.message || 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    ordersAPI.getAll().then(res => setOrders(res.data || []));
-    customersAPI.getAll().then(res => setCustomers(res.data || []));
-    collectionsAPI.getAll().then(res => setCollections(res.data || []));
-    salesmenAPI.getAll().then(res => setSalesmen(res.data || []));
+    loadDashboardData();
   }, []);
-  
-  const salesman = salesmen.find(s => s.userId._id === user?._id);
-  const salesmanOrders = orders.filter(o => (typeof o.salesmanId === 'string' ? o.salesmanId === salesman?._id : o.salesmanId?._id === salesman?._id));
-  const salesmanCollections = collections.filter(c => (typeof c.salesmanId === 'string' ? c.salesmanId === salesman?._id : c.salesmanId?._id === salesman?._id));
-  const territoryCustomers = customers; // You can filter by territory if needed
 
-  const todayCollections = salesmanCollections.filter(c => 
-    c.collectionDate === new Date().toISOString().split('T')[0]
+  // Auto-refresh when tab changes (with debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadDashboardData();
+    }, 100); // Small delay to prevent excessive calls
+    
+    return () => clearTimeout(timeoutId);
+  }, [activeTab, loadDashboardData]);
+  
+  // Performance: Removed excessive console.log statements
+  
+  // Memoized calculations for better performance
+  const salesman = useMemo(() => 
+    salesmen.find(s => s.userId?._id === user?._id), 
+    [salesmen, user?._id]
   );
 
-  const stats = [
+  const salesmanOrders = useMemo(() => 
+    orders.filter(o => {
+      const orderSalesmanId = typeof o.salesmanId === 'string' ? o.salesmanId : o.salesmanId?._id;
+      return orderSalesmanId === salesman?._id;
+    }), 
+    [orders, salesman?._id]
+  );
+
+  const salesmanCollections = useMemo(() => 
+    collections.filter(c => {
+      const collectionSalesmanId = typeof c.salesmanId === 'string' ? c.salesmanId : c.salesmanId?._id;
+      return collectionSalesmanId === salesman?._id;
+    }), 
+    [collections, salesman?._id]
+  );
+
+  // Calculate stats from frontend data as fallback
+  const currentMonth = useMemo(() => {
+    const month = new Date();
+    month.setDate(1);
+    month.setHours(0, 0, 0, 0);
+    return month;
+  }, []);
+
+  const monthlyOrders = useMemo(() => 
+    salesmanOrders.filter(o => new Date(o.orderDate) >= currentMonth).length, 
+    [salesmanOrders, currentMonth]
+  );
+
+  const todayCollectionsFiltered = useMemo(() => 
+    salesmanCollections.filter(c => 
+      c.collectionDate === new Date().toISOString().split('T')[0]
+    ), 
+    [salesmanCollections]
+  );
+
+  const todayCollectionsAmount = useMemo(() => 
+    todayCollectionsFiltered.reduce((sum, c) => sum + (c.amount || 0), 0), 
+    [todayCollectionsFiltered]
+  );
+  
+  const stats = useMemo(() => [
     {
       title: 'Territory Customers',
-      value: territoryCustomers.length,
+      value: dashboard?.overview?.territoryCustomers || customers.filter(c => c.territory === salesman?.territory).length || 0,
       icon: Users,
       color: 'bg-green-500'
     },
     {
       title: 'Orders This Month',
-      value: salesmanOrders.length,
+      value: dashboard?.monthly?.orders || monthlyOrders || 0,
       icon: ShoppingCart,
       color: 'bg-blue-500'
     },
     {
       title: 'Collections Today',
-      value: `₹${todayCollections.reduce((sum, c) => sum + c.amount, 0)}`,
+      value: `₹${(dashboard?.overview?.todayCollections || todayCollectionsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: DollarSign,
       color: 'bg-purple-500'
     },
     {
-      title: 'Target Achievement',
-      value: `${salesman ? ((salesman.achievedAmount / salesman.targetAmount) * 100).toFixed(0) : 0}%`,
+      title: 'Territory Outstanding',
+      value: `₹${(dashboard?.overview?.totalOutstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: Target,
-      color: 'bg-orange-500'
+      color: 'bg-red-500'
     }
-  ];
+  ], [dashboard, customers, salesman?.territory, monthlyOrders, todayCollectionsAmount]);
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
@@ -73,17 +154,41 @@ const SalesmanDashboard: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'take-order':
-        return <TakeOrder />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <TakeOrder />
+          </Suspense>
+        );
       case 'collect-payment':
-        return <CollectPayment />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <CollectPayment />
+          </Suspense>
+        );
       case 'customer-visits':
-        return <CustomerVisits />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <CustomerVisits />
+          </Suspense>
+        );
       case 'products':
-        return <SalesmanProductManagement />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <SalesmanProductManagement />
+          </Suspense>
+        );
       case 'sales-report':
-        return <SalesReport />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <SalesReport />
+          </Suspense>
+        );
       case 'ledger':
-        return <SalesmanLedger />;
+        return (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+            <SalesmanLedger />
+          </Suspense>
+        );
       default:
         return (
           <div className="space-y-6">
@@ -108,32 +213,38 @@ const SalesmanDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
                 <button
                   onClick={async () => {
-                    const [orderRes, customerRes, salesmenRes] = await Promise.all([
-                      ordersAPI.getAll(),
-                      customersAPI.getAll(),
-                      salesmenAPI.getAll()
-                    ]);
-                    setOrders(orderRes.data || []);
-                    setCustomers(customerRes.data || []);
-                    setSalesmen(salesmenRes.data || []);
+                    setLoading(true);
+                    try {
+                      const [orderRes, customerRes, salesmenRes, dashboardRes] = await Promise.all([
+                        ordersAPI.getAll(),
+                        customersAPI.getAll(),
+                        salesmenAPI.getAll(),
+                        dashboardAPI.getSalesmanDashboard()
+                      ]);
+                      setOrders(orderRes.data || []);
+                      setCustomers(customerRes.data || []);
+                      setSalesmen(salesmenRes.data || []);
+                      setDashboard(dashboardRes.data);
+                    } catch (err) {
+                      setError('Failed to refresh data');
+                    } finally {
+                      setLoading(false);
+                    }
                   }}
                   className="mb-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
-                  Refresh Orders
+                  Refresh Data
                 </button>
                 <div className="space-y-3">
-                  {salesmanOrders.slice(0, 5).map((order) => {
-                    return (
+                  {dashboard?.recentOrders && dashboard.recentOrders.length > 0 ? (
+                    dashboard.recentOrders.map((order: any) => (
                       <div key={order._id} className="flex items-center justify-between py-2 border-b border-gray-100">
                         <div>
-                          <p className="font-medium text-gray-900">{(() => {
-                            const customer = customers.find(c => (typeof c._id === 'string' ? c._id === (typeof order.customerId === 'string' ? order.customerId : order.customerId?._id) : false));
-                            return customer ? customer.userId.name : '';
-                          })()}</p>
+                          <p className="font-medium text-gray-900">{order.customerId?.userId?.name || 'Unknown Customer'}</p>
                           <p className="text-sm text-gray-600">{order.orderDate}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium text-gray-900">₹{order.netAmount}</p>
+                          <p className="font-medium text-gray-900">₹{order.netAmount?.toFixed(2) || '0.00'}</p>
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                             order.status === 'confirmed' ? 'bg-green-100 text-green-800' :
                             order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -143,8 +254,10 @@ const SalesmanDashboard: React.FC = () => {
                           </span>
                         </div>
                       </div>
-                    );
-                  })}
+                    ))
+                  ) : (
+                    <div className="text-center text-gray-500 py-4">No recent orders</div>
+                  )}
                 </div>
               </div>
 
@@ -154,65 +267,85 @@ const SalesmanDashboard: React.FC = () => {
                   <div className="flex items-center space-x-3">
                     <MapPin className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="font-medium text-gray-900">{salesman?.territory}</p>
+                      <p className="font-medium text-gray-900">{dashboard?.profile?.territory || 'Not assigned'}</p>
                       <p className="text-sm text-gray-600">Territory</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <Target className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="font-medium text-gray-900">₹{salesman?.targetAmount}</p>
+                      <p className="font-medium text-gray-900">₹{dashboard?.profile?.targetAmount || 0}</p>
                       <p className="text-sm text-gray-600">Monthly Target</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <TrendingUp className="h-5 w-5 text-gray-400" />
                     <div>
-                      <p className="font-medium text-gray-900">₹{salesman?.achievedAmount}</p>
+                      <p className="font-medium text-gray-900">₹{dashboard?.profile?.achievedAmount || 0}</p>
                       <p className="text-sm text-gray-600">Achieved This Month</p>
                     </div>
                   </div>
                   <div className="pt-4 border-t">
                     <div className="flex items-center space-x-2 text-sm text-gray-600">
                       <Phone className="h-4 w-4" />
-                      <span>Contact: {salesman?.mobile}</span>
+                      <span>Contact: {salesman?.userId?.mobile || user?.mobile || 'N/A'}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Overview</h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-600">Monthly Target Progress</span>
-                    <span className="font-medium text-gray-900">
-                      {salesman ? ((salesman.achievedAmount / salesman.targetAmount) * 100).toFixed(1) : 0}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div
-                      className="bg-green-500 h-3 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${salesman ? Math.min((salesman.achievedAmount / salesman.targetAmount) * 100, 100) : 0}%` 
-                      }}
-                    ></div>
-                  </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Customers with Outstanding</h3>
+                <div className="space-y-3">
+                  {dashboard?.customersWithOutstanding && dashboard.customersWithOutstanding.length > 0 ? (
+                    dashboard.customersWithOutstanding.map((customer: any) => (
+                      <div key={customer._id} className="flex items-center justify-between py-2 border-b border-gray-100">
+                        <div>
+                          <p className="font-medium text-gray-900">{customer.user?.name || 'Unknown Customer'}</p>
+                          <p className="text-sm text-gray-600">{customer.user?.mobile || 'No mobile'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-red-600">₹{customer.outstandingAmount?.toFixed(2) || '0.00'}</p>
+                          <p className="text-xs text-gray-500">Outstanding</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">No outstanding amounts in territory</p>
+                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-4 pt-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{territoryCustomers.length}</p>
-                    <p className="text-sm text-gray-600">Total Customers</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Overview</h3>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-gray-600">Monthly Target Progress</span>
+                      <span className="font-medium text-gray-900">
+                        {dashboard?.profile?.achievementPercentage?.toFixed(1) || 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div
+                        className="bg-green-500 h-3 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: `${Math.min(dashboard?.profile?.achievementPercentage || 0, 100)}%` 
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{salesmanOrders.length}</p>
-                    <p className="text-sm text-gray-600">Orders Taken</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{salesmanCollections.length}</p>
-                    <p className="text-sm text-gray-600">Collections Made</p>
+                  <div className="pt-4 border-t">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Territory Outstanding</span>
+                      <span className="font-medium text-red-600">₹{dashboard?.overview?.totalOutstanding || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Customers with Dues</span>
+                      <span className="font-medium text-gray-900">{dashboard?.overview?.customersWithOutstanding || 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -221,6 +354,13 @@ const SalesmanDashboard: React.FC = () => {
         );
     }
   };
+
+  if (loading) {
+    return <div className="text-center py-10">Loading salesman dashboard...</div>;
+  }
+  if (error) {
+    return <div className="text-center py-10 text-red-600">{error}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

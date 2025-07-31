@@ -25,63 +25,44 @@ const CustomerLedger: React.FC = () => {
 
   useEffect(() => {
     setLoading(true);
-    if (selectedCustomer !== 'all') {
-      if (typeof ledgerAPI.getByCustomer === 'function') {
-        ledgerAPI.getByCustomer(selectedCustomer)
-          .then((res: any) => {
-            if (res?.data?.entries && Array.isArray(res.data.entries)) {
-              console.log('Raw ledger API response (customer endpoint):', res.data.entries);
-              setLedgerEntries(res.data.entries);
-            } else {
-              setLedgerEntries([]);
-            }
-            setLoading(false);
-          })
-          .catch((err: any) => {
-            setError('Failed to fetch ledger entries');
-            setLoading(false);
-            console.error('Ledger API error:', err);
-          });
-      } else {
-        ledgerAPI.getAll({ customerId: selectedCustomer })
-          .then((res: any) => {
-            if (res?.data?.entries && Array.isArray(res.data.entries)) {
-              console.log('Raw ledger API response (all endpoint):', res.data.entries);
-              setLedgerEntries(res.data.entries);
-            } else if (Array.isArray(res.data)) {
-              console.log('Raw ledger API response (all endpoint):', res.data);
-              setLedgerEntries(res.data);
-            } else {
-              setLedgerEntries([]);
-            }
-            setLoading(false);
-          })
-          .catch((err: any) => {
-            setError('Failed to fetch ledger entries');
-            setLoading(false);
-            console.error('Ledger API error:', err);
-          });
-      }
-    } else {
-      ledgerAPI.getAll()
-        .then((res: any) => {
-          if (res?.data?.entries && Array.isArray(res.data.entries)) {
-            console.log('Raw ledger API response (all customers):', res.data.entries);
-            setLedgerEntries(res.data.entries);
-          } else if (Array.isArray(res.data)) {
-            console.log('Raw ledger API response (all customers):', res.data);
-            setLedgerEntries(res.data);
+    setError(null);
+    
+    const fetchLedgerEntries = async () => {
+      try {
+        let res;
+        
+        if (selectedCustomer !== 'all') {
+          // Fetch entries for specific customer
+          if (typeof ledgerAPI.getByCustomer === 'function') {
+            res = await ledgerAPI.getByCustomer(selectedCustomer);
           } else {
-            setLedgerEntries([]);
+            res = await ledgerAPI.getAll({ customerId: selectedCustomer });
           }
-          setLoading(false);
-        })
-        .catch((err: any) => {
-          setError('Failed to fetch ledger entries');
-          setLoading(false);
-          console.error('Ledger API error:', err);
-        });
-    }
+        } else {
+          // Fetch all entries for admin view
+          res = await ledgerAPI.getAll();
+        }
+        
+        if (res?.data?.entries && Array.isArray(res.data.entries)) {
+          console.log('Raw ledger API response:', res.data.entries);
+          setLedgerEntries(res.data.entries);
+        } else if (Array.isArray(res.data)) {
+          console.log('Raw ledger API response (direct array):', res.data);
+          setLedgerEntries(res.data);
+        } else {
+          console.log('No ledger entries found in response:', res);
+          setLedgerEntries([]);
+        }
+      } catch (err: any) {
+        setError('Failed to fetch ledger entries: ' + (err.message || 'Unknown error'));
+        console.error('Ledger API error:', err);
+        setLedgerEntries([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchLedgerEntries();
   }, [selectedCustomer]);
 
   const getCustomerName = (customerId: string | { _id: string; userId: any }) => {
@@ -107,12 +88,20 @@ const CustomerLedger: React.FC = () => {
   const hasOrderEntryFiltered = filteredEntries.some(e => e.type === 'order');
 
   const getRunningBalance = (upToIndex: number) => {
-    const customerEntries = ledgerEntries.slice(0, upToIndex + 1);
+    // Use sortedEntries instead of ledgerEntries for correct calculation
+    const customerEntries = filteredEntries.slice(0, upToIndex + 1);
     return customerEntries.reduce((balance, entry) => {
       const amount = entry.amount || 0;
-      return entry.type === 'debit' || entry.type === 'order'
-        ? balance + amount
-        : balance - amount;
+      if (entry.type === 'debit' || entry.type === 'order') {
+        return balance + amount;
+      } else if (entry.type === 'credit' || entry.type === 'payment') {
+        return balance - amount;
+      } else if (entry.type === 'adjustment') {
+        return balance + amount; // adjustment can be +/- based on context
+      } else if (entry.type === 'opening_balance') {
+        return amount; // overrides previous
+      }
+      return balance;
     }, 0);
   };
 
@@ -272,10 +261,10 @@ const CustomerLedger: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm capitalize">{entry.type}</td>
                         <td className="px-6 py-4 text-right text-sm text-red-600">
-                          {(entry.type === 'debit' || entry.type === 'order') && `₹${entry.amount}`}
+                          {(entry.type === 'debit' || entry.type === 'order') && `₹${entry.amount.toFixed(2)}`}
                         </td>
                         <td className="px-6 py-4 text-right text-sm text-green-600">
-                          {(entry.type === 'credit' || entry.type === 'payment') && `₹${entry.amount}`}
+                          {(entry.type === 'credit' || entry.type === 'payment') && `₹${entry.amount.toFixed(2)}`}
                         </td>
                         <td className="px-6 py-4 text-right text-sm font-medium">
                           <span className={balance > 0 ? 'text-red-600' : 'text-green-600'}>
@@ -328,13 +317,13 @@ const AddLedgerEntryModal: React.FC<{
     date: new Date().toISOString().slice(0, 10),
     description: '',
     type: 'debit' as LedgerEntry['type'],
-    amount: 0,
+    amount: '',
     reference: ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customerId || !formData.description || formData.amount <= 0) return;
+    if (!formData.customerId || !formData.description || !formData.amount || parseFloat(formData.amount) <= 0) return;
     onAdd({
       customerId: formData.customerId,
       entryDate: formData.date,

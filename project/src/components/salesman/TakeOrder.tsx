@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Minus, ShoppingCart, Search, Filter, User } from 'lucide-react';
-import { productsAPI, companiesAPI, customersAPI, ordersAPI } from '../../services/api';
+import { productsAPI, companiesAPI, customersAPI, ordersAPI, salesmenAPI } from '../../services/api';
 import { Product, OrderItem, Customer } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -8,7 +8,7 @@ console.log('TakeOrder component rendered');
 
 const TakeOrder: React.FC = () => {
   const { user } = useAuth();
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState<string>('all');
@@ -16,11 +16,13 @@ const TakeOrder: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [salesmen, setSalesmen] = useState<any[]>([]);
 
   useEffect(() => {
     productsAPI.getAll().then(res => setProducts(res.data || []));
     companiesAPI.getAll().then(res => setCompanies(res.data || []));
-    customersAPI.getAll().then(res => setCustomers(res.data || []));
+    customersAPI.getWithOutstanding().then(res => setCustomers(res.data || []));
+    salesmenAPI.getAll().then(res => setSalesmen(res.data || []));
   }, []);
 
   const filteredProducts = products.filter(product => {
@@ -105,8 +107,11 @@ const TakeOrder: React.FC = () => {
         discountAmount,
         status: 'pending',
         orderDate: new Date().toISOString(),
-        createdBy: selectedCustomer.userId._id
+        createdBy: selectedCustomer.user?._id || user?._id
       });
+      // Find the salesman record for the current user
+      const salesman = salesmen.find(s => s.userId?._id === user?._id);
+      
       await ordersAPI.create({
         customerId: selectedCustomer._id,
         items,
@@ -116,9 +121,10 @@ const TakeOrder: React.FC = () => {
         discountAmount,
         status: 'pending',
         orderDate: new Date().toISOString(),
-        createdBy: selectedCustomer.userId._id
+        createdBy: selectedCustomer.user?._id || user?._id,
+        salesmanId: salesman?._id // Add the salesman's record ID
       });
-      alert(`Order placed successfully for ${selectedCustomer.userId.name}!\nTotal: ₹${netAmount.toFixed(2)}`);
+      alert(`Order placed successfully for ${selectedCustomer.user?.name}!\nTotal: ₹${netAmount.toFixed(2)}`);
       setCart([]);
       setSelectedCustomer(null);
       // Optionally, refresh the page to reset the form
@@ -152,7 +158,7 @@ const TakeOrder: React.FC = () => {
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
           >
             <User className="h-5 w-5" />
-            <span>{selectedCustomer ? selectedCustomer.userId.name : 'Select Customer'}</span>
+            <span>{selectedCustomer ? selectedCustomer.user?.name : 'Select Customer'}</span>
           </button>
           {selectedCustomer && (
             <div className="bg-white border border-gray-300 px-4 py-2 rounded-lg flex items-center space-x-2">
@@ -180,12 +186,12 @@ const TakeOrder: React.FC = () => {
           <div className="bg-white rounded-xl shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium text-gray-900">{selectedCustomer.userId.name}</h3>
+                <h3 className="font-medium text-gray-900">{selectedCustomer.user?.name}</h3>
                 <p className="text-sm text-gray-600">{selectedCustomer.address}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm text-gray-600">Credit Limit: ₹{selectedCustomer.creditLimit}</p>
-                <p className="text-sm text-red-600">Outstanding: ₹{selectedCustomer.outstandingAmount}</p>
+                <p className="text-sm text-gray-600">Credit Limit: ₹{selectedCustomer.creditLimit.toFixed(2)}</p>
+                <p className="text-sm text-red-600">Outstanding: ₹{selectedCustomer.outstandingAmount.toFixed(2)}</p>
               </div>
             </div>
           </div>
@@ -260,7 +266,7 @@ const TakeOrder: React.FC = () => {
                     <div className="space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Sale Rate:</span>
-                        <span className="font-medium text-gray-900">₹{product.saleRate}</span>
+                        <span className="font-medium text-gray-900">₹{product.saleRate.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">GST:</span>
@@ -362,15 +368,15 @@ const TakeOrder: React.FC = () => {
 };
 
 const CustomerSelectModal: React.FC<{
-  customers: Customer[];
-  onSelect: (customer: Customer) => void;
+  customers: any[];
+  onSelect: (customer: any) => void;
   onClose: () => void;
 }> = ({ customers, onSelect, onClose }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredCustomers = customers.filter(customer =>
-    (customer.userId.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.userId.mobile?.includes(searchTerm))
+    (customer.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.user?.mobile?.includes(searchTerm))
   );
 
   return (
@@ -406,13 +412,13 @@ const CustomerSelectModal: React.FC<{
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <h4 className="font-medium text-gray-900">{customer.userId.name}</h4>
+                  <h4 className="font-medium text-gray-900">{customer.user?.name}</h4>
                   <p className="text-sm text-gray-600">{customer.address}</p>
-                  <p className="text-sm text-gray-600">{customer.userId.mobile}</p>
+                  <p className="text-sm text-gray-600">{customer.user?.mobile}</p>
                 </div>
                 <div className="text-right text-sm">
-                  <p className="text-gray-600">Credit: ₹{customer.creditLimit}</p>
-                  <p className="text-red-600">Outstanding: ₹{customer.outstandingAmount}</p>
+                  <p className="text-gray-600">Credit: ₹{customer.creditLimit.toFixed(2)}</p>
+                  <p className="text-red-600">Outstanding: ₹{customer.outstandingAmount.toFixed(2)}</p>
                 </div>
               </div>
             </div>

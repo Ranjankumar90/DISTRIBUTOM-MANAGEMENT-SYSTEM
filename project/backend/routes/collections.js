@@ -265,72 +265,55 @@ router.put('/:id/status', auth, authorize('admin'), async (req, res) => {
     const oldStatus = collection.status;
     collection.status = status;
 
-    // Handle admin approval/rejection from 'pending' status
-    if (oldStatus === 'pending' && status === 'approved') {
-      // Update customer outstanding amount (reduce it)
+    // Handle status changes and create ledger entries automatically
+    if (oldStatus !== status) {
       const customer = await Customer.findById(collection.customerId);
-      if (customer) {
-        customer.outstandingAmount = Math.max(0, customer.outstandingAmount - collection.amount);
-        await customer.save();
+      
+      if (status === 'approved' || status === 'cleared') {
+        // Collection is approved or cleared - create payment ledger entry
+        try {
+          // Check if ledger entry already exists for this collection
+          const existingEntry = await LedgerEntry.findOne({
+            referenceId: collection._id,
+            referenceModel: 'Collection',
+            type: 'payment'
+          });
+          
+          if (!existingEntry) {
+            const ledgerEntry = new LedgerEntry({
+              customerId: collection.customerId,
+              entryDate: new Date(),
+              description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
+              type: 'payment',
+              amount: collection.amount,
+              reference: collection.collectionNumber || collection._id.toString(),
+              referenceId: collection._id,
+              referenceModel: 'Collection',
+              createdBy: req.user._id
+            });
+            await ledgerEntry.save();
+            console.log('Ledger entry created for approved/cleared collection:', ledgerEntry._id);
+          }
+        } catch (error) {
+          console.error('Failed to create ledger entry for approved/cleared collection:', error);
+        }
+      } else if ((oldStatus === 'approved' || oldStatus === 'cleared') && status !== 'approved' && status !== 'cleared') {
+        // Collection was approved/cleared but now changed to something else - remove ledger entry
+        try {
+          const existingEntry = await LedgerEntry.findOne({
+            referenceId: collection._id,
+            referenceModel: 'Collection',
+            type: 'payment'
+          });
+          
+          if (existingEntry) {
+            await LedgerEntry.findByIdAndDelete(existingEntry._id);
+            console.log('Ledger entry removed for collection status change:', existingEntry._id);
+          }
+        } catch (error) {
+          console.error('Failed to remove ledger entry for collection status change:', error);
+        }
       }
-      // Create ledger entry
-      const ledgerEntry = new LedgerEntry({
-        customerId: collection.customerId,
-        entryDate: new Date(),
-        description: `Payment ${collection.collectionNumber} - Approved`,
-        type: 'payment',
-        amount: collection.amount,
-        reference: collection.collectionNumber,
-        referenceId: collection._id,
-        referenceModel: 'Collection',
-        createdBy: req.user._id
-      });
-      await ledgerEntry.save();
-    } else if (oldStatus === 'pending' && status === 'failed') {
-      // Do nothing to ledger, just mark as failed
-    }
-
-    // Existing logic for cleared/bounced/cancelled
-    if (oldStatus === 'cleared' && status === 'bounced') {
-      // If payment bounced, add back to customer outstanding
-      const customer = await Customer.findById(collection.customerId);
-      if (customer) {
-        customer.outstandingAmount += collection.amount;
-        await customer.save();
-      }
-      // Create reversal ledger entry
-      const ledgerEntry = new LedgerEntry({
-        customerId: collection.customerId,
-        entryDate: new Date(),
-        description: `Payment ${collection.collectionNumber} - Bounced`,
-        type: 'debit',
-        amount: collection.amount,
-        reference: collection.collectionNumber,
-        referenceId: collection._id,
-        referenceModel: 'Collection',
-        createdBy: req.user._id
-      });
-      await ledgerEntry.save();
-    } else if (oldStatus === 'bounced' && status === 'cleared') {
-      // If payment cleared after bounce, reduce outstanding again
-      const customer = await Customer.findById(collection.customerId);
-      if (customer) {
-        customer.outstandingAmount = Math.max(0, customer.outstandingAmount - collection.amount);
-        await customer.save();
-      }
-      // Create ledger entry
-      const ledgerEntry = new LedgerEntry({
-        customerId: collection.customerId,
-        entryDate: new Date(),
-        description: `Payment ${collection.collectionNumber} - Cleared`,
-        type: 'credit',
-        amount: collection.amount,
-        reference: collection.collectionNumber,
-        referenceId: collection._id,
-        referenceModel: 'Collection',
-        createdBy: req.user._id
-      });
-      await ledgerEntry.save();
     }
 
     await collection.save();

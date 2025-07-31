@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 interface Visit {
   _id?: string;
-  customerId: string;
+  customerId: string | null;
   salesmanId?: string;
   date: string;
   time: string;
@@ -23,26 +23,46 @@ const CustomerVisits: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  const loadData = async () => {
+    try {
+      const [customersRes, visitsRes] = await Promise.all([
+        customersAPI.getAll(),
+        visitsAPI.getAll()
+      ]);
+      setCustomers(customersRes.data || []);
+      setVisits(visitsRes.data || []);
+    } catch (err: any) {
+      console.error('Error loading data:', err);
+    }
+  };
+
   useEffect(() => {
-    customersAPI.getAll().then(res => setCustomers(res.data || []));
-    visitsAPI.getAll().then(res => setVisits(res.data || []));
+    loadData();
+  }, []);
+
+  // Auto-refresh when component mounts or when user navigates back to this tab
+  useEffect(() => {
+    loadData();
   }, []);
 
   const filteredVisits = visits.filter(visit => {
+    if (!visit.customerId) return false;
     const id = typeof visit.customerId === 'string' ? visit.customerId : visit.customerId._id;
     const customer = customers.find(c => c._id === id);
-    const matchesSearch = customer?.userId.name.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+    const matchesSearch = customer?.userId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
     const matchesStatus = statusFilter === 'all' || visit.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const getCustomerName = (customerId: string | { _id: string, userId: any }) => {
+  const getCustomerName = (customerId: string | { _id: string, userId: any } | null) => {
+    if (!customerId) return 'Unknown Customer';
     const id = typeof customerId === 'string' ? customerId : customerId._id;
     const customer = customers.find(c => c._id === id);
-    return customer?.userId.name || 'Unknown Customer';
+    return customer?.userId?.name || 'Unknown Customer';
   };
 
-  const getCustomerDetails = (customerId: string | { _id: string, userId: any }) => {
+  const getCustomerDetails = (customerId: string | { _id: string, userId: any } | null) => {
+    if (!customerId) return null;
     const id = typeof customerId === 'string' ? customerId : customerId._id;
     return customers.find(c => c._id === id);
   };
@@ -76,13 +96,18 @@ const CustomerVisits: React.FC = () => {
   };
 
   const updateVisitStatus = async (visitId: string, status: Visit['status']) => {
-    const visit = visits.find(v => v._id === visitId);
-    if (!visit) return;
-    const updated = { ...visit, status };
-    await visitsAPI.update(visitId, updated);
-    // Refresh visits
-    const res = await visitsAPI.getAll();
-    setVisits(res.data || []);
+    try {
+      const visit = visits.find(v => v._id === visitId);
+      if (!visit) return;
+      const updated = { ...visit, status };
+      await visitsAPI.update(visitId, updated);
+      // Refresh visits
+      const res = await visitsAPI.getAll();
+      setVisits(res.data || []);
+    } catch (err: any) {
+      console.error('Visit status update error:', err);
+      alert('Failed to update visit status. Please try again.');
+    }
   };
 
   return (

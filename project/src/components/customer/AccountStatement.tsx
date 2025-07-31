@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Calendar, CreditCard, TrendingUp, TrendingDown } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { customersAPI, ordersAPI, collectionsAPI, dashboardAPI } from '../../services/api';
+import { customersAPI, ordersAPI, collectionsAPI, dashboardAPI, ledgerAPI } from '../../services/api';
 
 const AccountStatement: React.FC = () => {
   const { user } = useAuth();
   const [dateRange, setDateRange] = useState('30');
   const [customer, setCustomer] = useState<any>(null);
-  const [customerOrders, setCustomerOrders] = useState<any[]>([]);
-  const [customerCollections, setCustomerCollections] = useState<any[]>([]);
+  const [ledgerEntries, setLedgerEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<any>(null);
@@ -19,6 +18,7 @@ const AccountStatement: React.FC = () => {
     setError(null);
     const fetchData = async () => {
       try {
+        // Get customer profile
         let customerData;
         if (user.role === 'customer') {
           const res = await customersAPI.getMe();
@@ -27,14 +27,19 @@ const AccountStatement: React.FC = () => {
           const res = await customersAPI.getById(user._id);
           customerData = res.data || res;
         }
-        const ordersData = await ordersAPI.getAll({ customerId: user._id });
-        const collectionsData = await collectionsAPI.getAll({ customerId: user._id });
+        setCustomer(customerData);
+
+        // Get customer-specific ledger entries
+        const ledgerRes = await ledgerAPI.getAll();
+        if (ledgerRes.success && ledgerRes.data) {
+          setLedgerEntries(ledgerRes.data);
+        } else {
+          setLedgerEntries([]);
+        }
+
         // Fetch dashboard summary from backend
         const dashboardRes = await dashboardAPI.getCustomerDashboard();
         setDashboard(dashboardRes.data);
-        setCustomer(customerData);
-        setCustomerOrders(ordersData.data || ordersData);
-        setCustomerCollections(collectionsData.data || collectionsData);
       } catch (err: any) {
         setError(err.message || 'Failed to load account statement');
       } finally {
@@ -48,6 +53,7 @@ const AccountStatement: React.FC = () => {
   function formatCurrency(amount: number) {
     return '₹' + amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  
   // Utility for formatting date
   function formatDate(dateStr: string) {
     const date = new Date(dateStr);
@@ -55,29 +61,17 @@ const AccountStatement: React.FC = () => {
     return date.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
 
-  // Combine orders and collections for statement
-  const transactions = [
-    ...customerOrders
-      .filter(order => order.status === 'delivered')
-      .map(order => ({
-        id: order._id || order.id,
-        date: order.orderDate,
-        type: 'order' as const,
-        description: `Order ${order.orderNumber || order.billNumber || ''}`.trim(),
-        debit: order.netAmount,
-        credit: 0,
-        balance: 0 // Will be calculated
-      })),
-    ...customerCollections.map(collection => ({
-      id: collection._id || collection.id,
-      date: collection.collectionDate,
-      type: 'payment' as const,
-      description: `Payment - ${collection.paymentMode || ''}`.trim(),
-      debit: 0,
-      credit: collection.amount,
-      balance: 0 // Will be calculated
-    }))
-  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // Process ledger entries for statement
+  const transactions = ledgerEntries.map(entry => ({
+    id: entry._id,
+    date: entry.entryDate,
+    type: entry.type,
+    description: entry.description,
+    debit: (entry.type === 'debit' || entry.type === 'order') ? entry.amount : 0,
+    credit: (entry.type === 'credit' || entry.type === 'payment') ? entry.amount : 0,
+    balance: 0, // Will be calculated
+    reference: entry.reference
+  })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   // Calculate running balance
   let runningBalance = 0;
@@ -86,8 +80,10 @@ const AccountStatement: React.FC = () => {
     transaction.balance = runningBalance;
   });
 
-  const totalOrders = customerOrders.reduce((sum, order) => sum + (order.netAmount || 0), 0);
-  const totalPayments = customerCollections.reduce((sum, collection) => sum + (collection.amount || 0), 0);
+  // Calculate summary
+  const totalDebits = transactions.reduce((sum, t) => sum + t.debit, 0);
+  const totalCredits = transactions.reduce((sum, t) => sum + t.credit, 0);
+  const currentBalance = runningBalance;
 
   if (loading) {
     return <div className="text-center py-8">Loading account statement...</div>;
@@ -115,6 +111,45 @@ const AccountStatement: React.FC = () => {
             <Download className="h-5 w-5" />
             <span>Export</span>
           </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <TrendingUp className="h-6 w-6 text-red-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Debits</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalDebits)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <TrendingDown className="h-6 w-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Credits</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalCredits)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <CreditCard className="h-6 w-6 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Current Balance</p>
+              <p className={`text-2xl font-bold ${currentBalance >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {formatCurrency(Math.abs(currentBalance))}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -148,24 +183,53 @@ const AccountStatement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {transactions.map((transaction) => (
-                <tr key={transaction.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(transaction.date)}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{transaction.description}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                      transaction.type === 'order' 
-                        ? 'bg-purple-100 text-purple-800' 
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {transaction.type === 'order' ? 'Order' : 'Payment'}
-                    </span>
+              {transactions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                    No transactions found
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-red-600">{transaction.debit ? formatCurrency(transaction.debit) : ''}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-green-600">{transaction.credit ? formatCurrency(transaction.credit) : ''}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right font-semibold">{formatCurrency(transaction.balance)}</td>
                 </tr>
-              ))}
+              ) : (
+                transactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatDate(transaction.date)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {transaction.description}
+                      {transaction.reference && (
+                        <div className="text-gray-500 text-xs">Ref: {transaction.reference}</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                        transaction.type === 'order' 
+                          ? 'bg-purple-100 text-purple-800' 
+                          : transaction.type === 'payment'
+                          ? 'bg-green-100 text-green-800'
+                          : transaction.type === 'debit'
+                          ? 'bg-red-100 text-red-800'
+                          : transaction.type === 'credit'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-red-600">
+                      {transaction.debit ? formatCurrency(transaction.debit) : ''}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-green-600">
+                      {transaction.credit ? formatCurrency(transaction.credit) : ''}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right font-semibold">
+                      <span className={transaction.balance >= 0 ? 'text-red-600' : 'text-green-600'}>
+                        {formatCurrency(Math.abs(transaction.balance))}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

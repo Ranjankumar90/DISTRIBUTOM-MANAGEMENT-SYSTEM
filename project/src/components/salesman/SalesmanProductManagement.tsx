@@ -56,7 +56,7 @@ const SalesmanProductManagement: React.FC = () => {
 
   const getStockStatus = (product: Product) => {
     if (product.stock === 0) return 'out-of-stock';
-    if (product.stock <= product.minStockLevel) return 'low-stock';
+    if (product.stock <= (product.minStockLevel || 0)) return 'low-stock';
     return 'in-stock';
   };
 
@@ -77,8 +77,8 @@ const SalesmanProductManagement: React.FC = () => {
               ? p.companyId === company._id
               : p.companyId && p.companyId._id === company._id) && p.isActive
           ));
-          const totalStock = companyProducts.reduce((sum, p) => sum + p.stock, 0);
-          const lowStockCount = companyProducts.filter(p => p.stock <= p.minStockLevel).length;
+          const totalStock = companyProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
+          const lowStockCount = companyProducts.filter(p => p.stock <= (p.minStockLevel || 0)).length;
           const expiringCount = companyProducts.filter(p => {
             const status = getExpiryStatus(p.batchInfo?.expiryDate);
             return status === 'expiring-soon' || status === 'expired';
@@ -199,15 +199,15 @@ const SalesmanProductManagement: React.FC = () => {
                     <div className="space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">MRP:</span>
-                        <span className="font-medium text-gray-900">₹{product.mrp}</span>
+                        <span className="font-medium text-gray-900">₹{product.mrp?.toFixed(2) || '0.00'}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Sale Rate:</span>
-                        <span className="font-medium text-gray-900">₹{product.saleRate}</span>
+                        <span className="font-medium text-gray-900">₹{product.saleRate?.toFixed(2) || '0.00'}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">GST:</span>
-                        <span className="text-gray-900">{product.gstRate}%</span>
+                        <span className="text-gray-900">{product.gstRate || 0}%</span>
                       </div>
                       {product.batchInfo?.expiryDate && (
                         <div className="flex justify-between text-sm">
@@ -322,17 +322,17 @@ const SalesmanProductManagement: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div>
-                      <div>MRP: ₹{product.mrp}</div>
-                      <div>Sale: ₹{product.saleRate}</div>
-                      <div>GST: {product.gstRate}%</div>
+                      <div>MRP: ₹{product.mrp?.toFixed(2) || '0.00'}</div>
+                      <div>Sale: ₹{product.saleRate?.toFixed(2) || '0.00'}</div>
+                      <div>GST: {product.gstRate || 0}%</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <span className={`text-sm font-medium ${getStockColor(stockStatus)}`}>
-                        {product.stock}
+                        {product.stock || 0}
                       </span>
-                      <div className="text-xs text-gray-500">Min: {product.minStockLevel}</div>
+                      <div className="text-xs text-gray-500">Min: {product.minStockLevel || 0}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -454,19 +454,19 @@ const ProductDetailsModal: React.FC<{
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-500">MRP</label>
-              <p className="text-gray-900 font-medium">₹{product.mrp}</p>
+              <p className="text-gray-900 font-medium">₹{product.mrp?.toFixed(2) || '0.00'}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">Sale Rate</label>
-              <p className="text-gray-900 font-medium">₹{product.saleRate}</p>
+              <p className="text-gray-900 font-medium">₹{product.saleRate?.toFixed(2) || '0.00'}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">GST Rate</label>
-              <p className="text-gray-900">{product.gstRate}%</p>
+              <p className="text-gray-900">{product.gstRate || 0}%</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">Unit</label>
-              <p className="text-gray-900">{product.unit}</p>
+              <p className="text-gray-900">{product.unit || 'N/A'}</p>
             </div>
           </div>
 
@@ -474,16 +474,16 @@ const ProductDetailsModal: React.FC<{
             <div>
               <label className="block text-sm font-medium text-gray-500">Current Stock</label>
               <p className={`font-medium ${
-                product.stock === 0 ? 'text-red-600' :
-                product.stock <= product.minStockLevel ? 'text-orange-600' :
+                (product.stock || 0) === 0 ? 'text-red-600' :
+                (product.stock || 0) <= (product.minStockLevel || 0) ? 'text-orange-600' :
                 'text-green-600'
               }`}>
-                {product.stock} units
+                {product.stock || 0} units
               </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-500">Min Stock Level</label>
-              <p className="text-gray-900">{product.minStockLevel}</p>
+              <p className="text-gray-900">{product.minStockLevel || 0}</p>
             </div>
           </div>
 

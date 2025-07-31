@@ -25,16 +25,31 @@ router.get('/', auth, async (req, res) => {
     const query = {};
 
     if (req.user.role === 'customer') {
+      // For customer role, get their customer profile and filter by their customerId
       const customer = await Customer.findOne({ userId: req.user._id });
       if (customer) {
         query.customerId = customer._id;
+      } else {
+        // If no customer profile found, return empty result
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0
+          }
+        });
       }
-    } else if (customerId) {
+    } else if (customerId && customerId !== 'all') {
+      // For admin/salesman, filter by specific customer if provided
       query.customerId = customerId;
     }
+    // If no customerId provided for admin/salesman, show all entries
 
     // Apply filters
-    if (type) {
+    if (type && type !== 'all') {
       query.type = type;
     }
 
@@ -348,39 +363,6 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
       success: false,
       message: 'Server error'
     });
-  }
-});
-
-// Utility route for admin: Recalculate all customer outstanding amounts based on delivered orders and cleared collections only
-router.post('/recalculate-outstanding', auth, authorize('admin'), async (req, res) => {
-  try {
-    const customers = await Customer.find();
-    for (const customer of customers) {
-      // Sum all delivered orders
-      const deliveredOrders = await Order.find({ customerId: customer._id, status: 'delivered' });
-      const totalOrder = deliveredOrders.reduce((sum, o) => sum + o.netAmount, 0);
-      // Sum all cleared collections
-      const clearedCollections = await Collection.find({ customerId: customer._id, status: 'cleared' });
-      const totalCollection = clearedCollections.reduce((sum, c) => sum + c.amount, 0);
-      // Outstanding = delivered orders - cleared collections
-      customer.outstandingAmount = Math.max(0, totalOrder - totalCollection);
-      await customer.save();
-    }
-    res.json({ success: true, message: 'Outstanding amounts recalculated for all customers.' });
-  } catch (error) {
-    console.error('Recalculate outstanding error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// TEMPORARY: Reset all customer outstanding amounts to zero (admin only)
-router.post('/reset-all-outstanding', auth, authorize('admin'), async (req, res) => {
-  try {
-    await Customer.updateMany({}, { $set: { outstandingAmount: 0 } });
-    res.json({ success: true, message: 'All customer outstanding amounts reset to zero.' });
-  } catch (error) {
-    console.error('Reset outstanding error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 

@@ -37,14 +37,23 @@ const SalesReport: React.FC = () => {
     salesmenAPI.getAll().then(res => setSalesmen(res.data || []));
   }, []);
 
-  const salesman = salesmen.find(s => s.userId._id === user?._id);
-  const salesmanOrders = orders.filter(o => (typeof o.salesmanId === 'string' ? o.salesmanId === salesman?._id : o.salesmanId?._id === salesman?._id));
-  const salesmanCollections = collections.filter(c => (typeof c.salesmanId === 'string' ? c.salesmanId === salesman?._id : c.salesmanId?._id === salesman?._id));
+  const salesman = salesmen.find(s => s.userId?._id === user?._id);
+  const salesmanOrders = orders.filter(o => {
+    const orderSalesmanId = typeof o.salesmanId === 'string' ? o.salesmanId : o.salesmanId?._id;
+    return orderSalesmanId === salesman?._id;
+  });
+  const salesmanCollections = collections.filter(c => {
+    const collectionSalesmanId = typeof c.salesmanId === 'string' ? c.salesmanId : c.salesmanId?._id;
+    return collectionSalesmanId === salesman?._id;
+  });
 
   // Calculate metrics
-  const totalSales = salesmanOrders.reduce((sum, order) => sum + order.netAmount, 0);
-  const totalCollections = salesmanCollections.reduce((sum, collection) => sum + collection.amount, 0);
-  const uniqueCustomers = new Set(salesmanOrders.map(o => (typeof o.customerId === 'string' ? o.customerId : o.customerId?._id))).size;
+  const totalSales = salesmanOrders.reduce((sum, order) => sum + (order.netAmount || 0), 0);
+  const totalCollections = salesmanCollections.reduce((sum, collection) => sum + (collection.amount || 0), 0);
+  const uniqueCustomers = new Set(salesmanOrders.map(o => {
+    const customerId = typeof o.customerId === 'string' ? o.customerId : o.customerId?._id;
+    return customerId;
+  })).size;
   const averageOrderValue = salesmanOrders.length > 0 ? totalSales / salesmanOrders.length : 0;
 
   // Monthly data for chart (mock data)
@@ -133,20 +142,20 @@ const SalesReport: React.FC = () => {
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-600">Monthly Target</span>
-                <span className="font-medium text-gray-900">₹{salesman?.targetAmount.toLocaleString()}</span>
+                <span className="font-medium text-gray-900">₹{salesman?.targetAmount?.toLocaleString() || 0}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-green-500 h-3 rounded-full"
                   style={{ 
-                    width: `${salesman ? Math.min((salesman.achievedAmount / salesman.targetAmount) * 100, 100) : 0}%` 
+                    width: `${salesman ? Math.min((salesman.achievedAmount || 0) / (salesman.targetAmount || 1) * 100, 100) : 0}%` 
                   }}
                 ></div>
               </div>
               <div className="flex justify-between text-sm mt-2">
-                <span className="text-gray-600">Achieved: ₹{salesman?.achievedAmount.toLocaleString()}</span>
+                <span className="text-gray-600">Achieved: ₹{salesman?.achievedAmount?.toLocaleString() || 0}</span>
                 <span className="font-medium text-green-600">
-                  {salesman ? ((salesman.achievedAmount / salesman.targetAmount) * 100).toFixed(1) : 0}%
+                  {salesman ? ((salesman.achievedAmount || 0) / (salesman.targetAmount || 1) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             </div>
@@ -213,7 +222,7 @@ const SalesReport: React.FC = () => {
                     {order.orderDate}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{order.netAmount}
+                    ₹{order.netAmount?.toFixed(2) || '0.00'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
@@ -281,13 +290,13 @@ const SalesReport: React.FC = () => {
                     {customer?.userId?.name || customer?.name || 'Unknown'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {collection.collectionDate || collection.date}
+                    {collection.collectionDate || collection.date || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{collection.amount}
+                    ₹{collection.amount?.toFixed(2) || '0.00'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {collection.paymentMode || collection.mode}
+                    {collection.paymentMode || collection.mode || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
