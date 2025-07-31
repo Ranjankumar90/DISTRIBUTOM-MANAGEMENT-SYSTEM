@@ -44,7 +44,7 @@ app.use(limiter);
 const allowedOrigins = [
   process.env.CLIENT_URL || 'http://localhost:5173',
   // Add your actual Vercel URL here - replace with your real URL
-  // Example: 'https://your-project-name.vercel.app'
+  'https://distributom-management-system-bdxccmsqa.vercel.app' // ✅ your actual Vercel frontend URL
 ];
 
 app.use(cors({
