@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Phone, Lock, User } from 'lucide-react';
+import { Phone, Lock } from 'lucide-react';
 import BusinessLogo from './common/BusinessLogo';
 
 const Login: React.FC = () => {
@@ -18,11 +18,7 @@ const Login: React.FC = () => {
     await login(mobile, password);
   };
 
-  const demoCredentials = [
-    { role: 'Admin', mobile: '7033021791', password: '1222@Ranjan' },
-    { role: 'Customer', mobile: '9876543211', password: 'cust123' },
-    { role: 'Salesman', mobile: '9876543213', password: 'sales123' }
-  ];
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -89,24 +85,7 @@ const Login: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Demo Credentials:</h3>
-          <div className="space-y-2">
-            {demoCredentials.map((cred, index) => (
-              <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <User className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700">{cred.role}</span>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {cred.mobile} / {cred.password}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+
       </div>
     </div>
   );
