@@ -14,7 +14,7 @@ router.get('/', auth, async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 10,
+      limit = 50, // Increased limit to show more entries
       customerId,
       type,
       startDate,
@@ -46,7 +46,7 @@ router.get('/', auth, async (req, res) => {
       // For admin/salesman, filter by specific customer if provided
       query.customerId = customerId;
     }
-    // If no customerId provided for admin/salesman, show all entries
+    // If no customerId provided for admin/salesman, show all entries (FIXED)
 
     // Apply filters
     if (type && type !== 'all') {
@@ -58,6 +58,9 @@ router.get('/', auth, async (req, res) => {
       if (startDate) query.entryDate.$gte = new Date(startDate);
       if (endDate) query.entryDate.$lte = new Date(endDate);
     }
+
+    console.log('Ledger query:', query);
+    console.log('User role:', req.user.role);
 
     const options = {
       page: parseInt(page),
@@ -75,6 +78,14 @@ router.get('/', auth, async (req, res) => {
       .skip((options.page - 1) * options.limit);
 
     const total = await LedgerEntry.countDocuments(query);
+
+    console.log(`Found ${entries.length} entries for query:`, query);
+    console.log('Sample entries:', entries.slice(0, 3).map(e => ({
+      customer: e.customerId?.userId?.name,
+      type: e.type,
+      amount: e.amount,
+      date: e.entryDate
+    })));
 
     res.json({
       success: true,

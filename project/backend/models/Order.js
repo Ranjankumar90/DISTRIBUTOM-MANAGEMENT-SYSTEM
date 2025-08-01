@@ -114,7 +114,6 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Indexes
-orderSchema.index({ orderNumber: 1 });
 orderSchema.index({ customerId: 1 });
 orderSchema.index({ salesmanId: 1 });
 orderSchema.index({ status: 1 });

@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { dashboardAPI } from '../../services/api';
 import AdminOverview from './AdminOverview';
 import { lazy, Suspense } from 'react';
+import LoadingSpinner from '../common/LoadingSpinner';
+import { measureDashboardLoad } from '../../utils/performance';
 
 // Lazy load components for better performance
 const BusinessProfile = lazy(() => import('./BusinessProfile'));
@@ -23,27 +25,54 @@ const AdminDashboard: React.FC = () => {
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    
     try {
-      const res = await dashboardAPI.getAdminDashboard();
-      setDashboard(res.data);
+      // Set a timeout for the dashboard request
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Dashboard load timeout. Please try again.')), 15000) // Increased to 15 seconds for production
+      );
+      
+      const dashboardPromise = dashboardAPI.getAdminDashboard();
+      const res = await measureDashboardLoad('Admin', () => 
+        Promise.race([dashboardPromise, timeoutPromise])
+      ) as any;
+      
+      if (res.success) {
+        setDashboard(res.data);
+        setRetryCount(0); // Reset retry count on success
+      } else {
+        setError(res.message || 'Failed to load dashboard');
+      }
     } catch (err: any) {
+      console.error('Dashboard load error:', err);
       setError(err.message || 'Failed to load dashboard');
+      
+      // Auto-retry on network errors (max 2 attempts, reduced from 3)
+      if (err.message.includes('Network error') || err.message.includes('timeout') && retryCount < 2) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadDashboardData();
+        }, 2000); // Increased retry delay to 2 seconds for production
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [retryCount]);
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [loadDashboardData]);
 
-  // Auto-refresh when tab changes
+  // Auto-refresh when tab changes (but not for overview to avoid double loading)
   useEffect(() => {
-    loadDashboardData();
+    if (activeTab !== 'overview') {
+      loadDashboardData();
+    }
   }, [activeTab]);
 
   const stats = useMemo(() => [
@@ -91,61 +120,61 @@ const AdminDashboard: React.FC = () => {
     switch (activeTab) {
       case 'business-profile':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading business profile..." />}>
             <BusinessProfile />
           </Suspense>
         );
       case 'companies':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading companies..." />}>
             <CompanyManagement />
           </Suspense>
         );
       case 'customers':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading customers..." />}>
             <CustomerManagement />
           </Suspense>
         );
       case 'products':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading products..." />}>
             <ProductManagement />
           </Suspense>
         );
       case 'salesmen':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading salesmen..." />}>
             <SalesmanManagement />
           </Suspense>
         );
       case 'orders':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading orders..." />}>
             <OrderManagement />
           </Suspense>
         );
       case 'collections':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading collections..." />}>
             <CollectionManagement />
           </Suspense>
         );
       case 'ledger':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading ledger..." />}>
             <CustomerLedger />
           </Suspense>
         );
       case 'direct-bill':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading direct bill..." />}>
             <DirectBill />
           </Suspense>
         );
       case 'gst-billing':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading GST billing..." />}>
             <GSTBilling />
           </Suspense>
         );
@@ -226,10 +255,27 @@ const AdminDashboard: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-10">Loading admin dashboard...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading admin dashboard..." fast={true} />
+      </div>
+    );
   }
+  
   if (error) {
-    return <div className="text-center py-10 text-red-600">{error}</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-lg mb-4">{error}</div>
+          <button 
+            onClick={loadDashboardData}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

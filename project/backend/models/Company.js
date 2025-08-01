@@ -70,7 +70,6 @@ const companySchema = new mongoose.Schema({
 
 // 📌 Indexes
 companySchema.index({ name: 1 });
-companySchema.index({ gstNumber: 1 });
 companySchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Company', companySchema);

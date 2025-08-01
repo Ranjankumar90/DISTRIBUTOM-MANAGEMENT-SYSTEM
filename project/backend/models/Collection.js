@@ -64,7 +64,6 @@ const collectionSchema = new mongoose.Schema({
 });
 
 // 📌 Indexes for performance
-collectionSchema.index({ collectionNumber: 1 });
 collectionSchema.index({ customerId: 1 });
 collectionSchema.index({ salesmanId: 1 });
 collectionSchema.index({ collectionDate: 1 });

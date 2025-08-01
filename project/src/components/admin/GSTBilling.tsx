@@ -4,6 +4,8 @@ import { FileText, Download, Search, Calendar, Filter } from 'lucide-react';
 import { ordersAPI, customersAPI, productsAPI, companiesAPI } from '../../services/api';
 import { businessProfile } from '../../data/businessProfile';
 import { Order } from '../../types';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const GSTBilling: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -273,20 +275,65 @@ const GSTBillModal: React.FC<{
     pageStyle: '@media print { body { -webkit-print-color-adjust: exact; } }',
   });
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (billRef.current) {
-      const htmlContent = billRef.current.outerHTML;
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = generateFileName();
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      URL.revokeObjectURL(url);
+      try {
+        // Show loading state
+        const downloadBtn = document.querySelector('[data-download-btn]') as HTMLButtonElement;
+        if (downloadBtn) {
+          downloadBtn.disabled = true;
+          downloadBtn.innerHTML = '<span>Generating PDF...</span>';
+        }
+
+        // Convert HTML to canvas
+        const canvas = await html2canvas(billRef.current, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff'
+        });
+
+        // Create PDF
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = 295; // A4 height in mm
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+
+        let position = 0;
+
+        // Add first page
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        // Add additional pages if needed
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        // Download PDF
+        pdf.save(generateFileName().replace('.html', '.pdf'));
+
+        // Reset button
+        if (downloadBtn) {
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><span>Download PDF</span>';
+        }
+      } catch (error) {
+        console.error('PDF generation error:', error);
+        alert('Failed to generate PDF. Please try again.');
+        
+        // Reset button on error
+        const downloadBtn = document.querySelector('[data-download-btn]') as HTMLButtonElement;
+        if (downloadBtn) {
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><span>Download PDF</span>';
+        }
+      }
     }
   };
 
@@ -299,6 +346,7 @@ const GSTBillModal: React.FC<{
             <button
               onClick={handleDownload}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              data-download-btn
             >
               <Download className="h-4 w-4" />
               <span>Download PDF</span>
@@ -350,8 +398,8 @@ const GSTBillModal: React.FC<{
           <div className="grid grid-cols-2 gap-8 mb-6">
             <div>
               <div className="text-sm">
-                <p><span className="font-medium">Invoice No:</span> {order.billNumber || order.id}</p>
-                <p><span className="font-medium">Order No:</span> {order.id}</p>
+                <p><span className="font-medium">Invoice No:</span> {order.billNumber || order._id}</p>
+                <p><span className="font-medium">Order No:</span> {order._id}</p>
               </div>
             </div>
             <div>

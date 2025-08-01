@@ -42,34 +42,32 @@ app.use(limiter);
 
 // CORS configuration
 const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  'https://distributom-management-system-bdxccmsqa.vercel.app',
-  'https://distributom-management-system.vercel.app', // ✅ remove trailing slash
+  'http://localhost:5173',
+  'https://distributom-management-system.vercel.app',
+  'https://distributom-management-system-bdxccmsqa.vercel.app'
 ];
-
 
 const corsOptions = {
   origin: function (origin, callback) {
-    console.log('🛰️ CORS origin request:', origin); // Optional for debugging
-    if (!origin) return callback(null, true); // allow curl, mobile apps
-
-    if (allowedOrigins.includes(origin)) {
-      console.log('✅ Allowed by CORS:', origin);
-      return callback(null, true);
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-
-    console.log('❌ Blocked by CORS:', origin);
-    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
-// Apply CORS to all routes
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// 🔥 Handle preflight requests
+// Handle preflight requests
 app.options('*', cors(corsOptions));
-
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -82,7 +80,6 @@ if (process.env.NODE_ENV === 'development') {
 
 // Database connection
 mongoose.connect(process.env.MONGO_URI)
-
 .then(() => console.log('✅ MongoDB connected successfully'))
 .catch(err => console.error('❌ MongoDB connection error:', err));
 

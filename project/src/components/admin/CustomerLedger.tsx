@@ -10,7 +10,7 @@ const CustomerLedger: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddEntry, setShowAddEntry] = useState(false);
   const [dateFilter, setDateFilter] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('all'); // <-- add this
+  const [selectedType, setSelectedType] = useState<string>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFinalBalanceOnly, setShowFinalBalanceOnly] = useState(false);
@@ -18,8 +18,13 @@ const CustomerLedger: React.FC = () => {
   useEffect(() => {
     customersAPI.getAll().then(res => {
       if (res.success && res.data) {
+        console.log('Loaded customers:', res.data);
         setCustomers(res.data);
+      } else {
+        console.error('Failed to load customers:', res);
       }
+    }).catch(err => {
+      console.error('Error loading customers:', err);
     });
   }, []);
 
@@ -33,25 +38,28 @@ const CustomerLedger: React.FC = () => {
         
         if (selectedCustomer !== 'all') {
           // Fetch entries for specific customer
-          if (typeof ledgerAPI.getByCustomer === 'function') {
-            res = await ledgerAPI.getByCustomer(selectedCustomer);
+          res = await ledgerAPI.getByCustomer(selectedCustomer);
+          if (res?.success && res?.data?.entries) {
+            console.log('Customer-specific ledger entries:', res.data.entries);
+            setLedgerEntries(res.data.entries);
           } else {
-            res = await ledgerAPI.getAll({ customerId: selectedCustomer });
+            console.log('No customer-specific entries found');
+            setLedgerEntries([]);
           }
         } else {
           // Fetch all entries for admin view
           res = await ledgerAPI.getAll();
-        }
-        
-        if (res?.data?.entries && Array.isArray(res.data.entries)) {
-          console.log('Raw ledger API response:', res.data.entries);
-          setLedgerEntries(res.data.entries);
-        } else if (Array.isArray(res.data)) {
-          console.log('Raw ledger API response (direct array):', res.data);
-          setLedgerEntries(res.data);
-        } else {
-          console.log('No ledger entries found in response:', res);
-          setLedgerEntries([]);
+          console.log('Raw API response for all customers:', res);
+          
+          if (res?.success && res?.data) {
+            // Handle both array and paginated response
+            const entries = Array.isArray(res.data) ? res.data : (res.data.entries || []);
+            console.log('All customers ledger entries:', entries);
+            setLedgerEntries(entries);
+          } else {
+            console.log('No ledger entries found for all customers');
+            setLedgerEntries([]);
+          }
         }
       } catch (err: any) {
         setError('Failed to fetch ledger entries: ' + (err.message || 'Unknown error'));
@@ -82,6 +90,12 @@ const CustomerLedger: React.FC = () => {
 
   // Debug log for filtered entries
   console.log('Filtered ledger entries:', filteredEntries);
+  console.log('Selected customer:', selectedCustomer);
+  console.log('Total entries loaded:', ledgerEntries.length);
+  console.log('Unique customers in data:', [...new Set(ledgerEntries.map(e => {
+    const customerId = typeof e.customerId === 'object' ? e.customerId._id : e.customerId;
+    return getCustomerName(customerId);
+  }))]);
 
   // Check for order type entries in the raw data but not in filtered
   const hasOrderEntryRaw = ledgerEntries.some(e => e.type === 'order');
@@ -118,20 +132,19 @@ const CustomerLedger: React.FC = () => {
         reference: entryData.reference
       });
       setShowAddEntry(false);
+      
       // Refresh ledger entries from backend
-      if (selectedCustomer !== 'all' && typeof ledgerAPI.getByCustomer === 'function') {
+      if (selectedCustomer !== 'all') {
         const res = await ledgerAPI.getByCustomer(selectedCustomer);
-        if (res?.data?.entries && Array.isArray(res.data.entries)) {
+        if (res?.success && res?.data?.entries) {
           setLedgerEntries(res.data.entries);
         } else {
           setLedgerEntries([]);
         }
       } else {
-        const res = await ledgerAPI.getAll(selectedCustomer !== 'all' ? { customerId: selectedCustomer } : undefined);
-        if (res?.data?.entries && Array.isArray(res.data.entries)) {
-          setLedgerEntries(res.data.entries);
-        } else if (Array.isArray(res.data)) {
-          setLedgerEntries(res.data);
+        const res = await ledgerAPI.getAll();
+        if (res?.success && res?.data) {
+          setLedgerEntries(Array.isArray(res.data) ? res.data : []);
         } else {
           setLedgerEntries([]);
         }
@@ -149,9 +162,19 @@ const CustomerLedger: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      
       <div className="flex items-center justify-between mb-4">
         <div className="text-2xl font-bold text-gray-900">Customer Ledger Management</div>
         <div className="flex items-center space-x-4">
+          <div className="text-sm text-gray-600">
+            {selectedCustomer === 'all' 
+              ? `Showing ${ledgerEntries.length} entries from ${[...new Set(ledgerEntries.map(e => {
+                  const customerId = typeof e.customerId === 'object' ? e.customerId._id : e.customerId;
+                  return getCustomerName(customerId);
+                }))].length} customers`
+              : `Showing ${ledgerEntries.length} entries for selected customer`
+            }
+          </div>
           <label className="flex items-center space-x-2 text-sm">
             <input
               type="checkbox"

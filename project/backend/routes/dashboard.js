@@ -9,62 +9,93 @@ const { auth, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Cache for dashboard data to reduce load times
+const dashboardCache = new Map();
+const CACHE_DURATION = 300000; // Increased to 5 minutes for production
+
+const getCachedDashboard = (key) => {
+  const cached = dashboardCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedDashboard = (key, data) => {
+  dashboardCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+};
+
 // @route   GET /api/dashboard/admin
 // @desc    Get admin dashboard data
 // @access  Private (Admin)
 router.get('/admin', auth, authorize('admin'), async (req, res) => {
   try {
-    // Auto-sync ledger with orders and collections
+    // Check cache first
+    const cacheKey = `admin_${req.user._id}`;
+    const cached = getCachedDashboard(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    // Auto-sync ledger with orders and collections (only once per minute)
     const LedgerEntry = require('../models/LedgerEntry');
-    const Collection = require('../models/Collection');
     try {
-      await LedgerEntry.syncWithOrders();
-      await LedgerEntry.syncWithCollections();
-      
-      // Additional sync for approved collections that might not have ledger entries
-      const customers = await Customer.find();
-      let createdEntries = 0;
-      
-      for (const customer of customers) {
-        // Get all approved collections for this customer that don't have ledger entries
-        const approvedCollections = await Collection.find({ 
-          customerId: customer._id, 
-          status: { $in: ['approved', 'cleared'] } 
-        });
+      // Only sync if not recently done
+      const lastSyncKey = `sync_${req.user._id}`;
+      const lastSync = dashboardCache.get(lastSyncKey);
+      if (!lastSync || Date.now() - lastSync.timestamp > 300000) { // Increased to 5 minutes for production
+        await LedgerEntry.syncWithOrders();
+        await LedgerEntry.syncWithCollections();
         
-        for (const collection of approvedCollections) {
-          // Check if ledger entry already exists for this collection
-          const existingEntry = await LedgerEntry.findOne({
-            referenceId: collection._id,
-            referenceModel: 'Collection',
-            type: 'payment'
+        // Additional sync for approved collections that might not have ledger entries
+        const customers = await Customer.find();
+        let createdEntries = 0;
+        
+        for (const customer of customers) {
+          // Get all approved collections for this customer that don't have ledger entries
+          const approvedCollections = await Collection.find({ 
+            customerId: customer._id, 
+            status: { $in: ['approved', 'cleared'] } 
           });
           
-          if (!existingEntry) {
-            // Create ledger entry for approved collection
-            const ledgerEntry = new LedgerEntry({
-              customerId: customer._id,
-              entryDate: collection.collectionDate || new Date(),
-              description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
-              type: 'payment',
-              amount: collection.amount,
-              reference: collection.collectionNumber || collection._id.toString(),
+          for (const collection of approvedCollections) {
+            // Check if ledger entry already exists for this collection
+            const existingEntry = await LedgerEntry.findOne({
               referenceId: collection._id,
               referenceModel: 'Collection',
-              createdBy: collection.createdBy
+              type: 'payment'
             });
-            await ledgerEntry.save();
-            createdEntries++;
-            console.log(`Auto-created ledger entry for approved collection ${collection._id}`);
+            
+            if (!existingEntry) {
+              // Create ledger entry for approved collection
+              const ledgerEntry = new LedgerEntry({
+                customerId: customer._id,
+                entryDate: collection.collectionDate || new Date(),
+                description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
+                type: 'payment',
+                amount: collection.amount,
+                reference: collection.collectionNumber || collection._id.toString(),
+                referenceId: collection._id,
+                referenceModel: 'Collection',
+                createdBy: collection.createdBy
+              });
+              await ledgerEntry.save();
+              createdEntries++;
+            }
           }
         }
+        
+        if (createdEntries > 0) {
+          console.log(`Auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
+        }
+        
+        // Update sync timestamp
+        dashboardCache.set(lastSyncKey, { timestamp: Date.now() });
+        console.log('Ledger auto-sync completed');
       }
-      
-      if (createdEntries > 0) {
-        console.log(`Auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
-      }
-      
-      console.log('Ledger auto-sync completed');
     } catch (syncError) {
       console.error('Ledger auto-sync error:', syncError);
       // Continue with dashboard data even if sync fails
@@ -233,7 +264,7 @@ router.get('/admin', auth, authorize('admin'), async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         overview: {
@@ -251,7 +282,12 @@ router.get('/admin', auth, authorize('admin'), async (req, res) => {
         topCustomers,
         monthlySales
       }
-    });
+    };
+
+    // Cache the response
+    setCachedDashboard(cacheKey, responseData);
+    
+    res.json(responseData);
   } catch (error) {
     console.error('Admin dashboard error:', error);
     res.status(500).json({
@@ -266,6 +302,13 @@ router.get('/admin', auth, authorize('admin'), async (req, res) => {
 // @access  Private (Salesman)
 router.get('/salesman', auth, authorize('salesman'), async (req, res) => {
   try {
+    // Check cache first
+    const cacheKey = `salesman_${req.user._id}`;
+    const cached = getCachedDashboard(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
     console.log('Salesman dashboard request - User ID:', req.user._id);
     const salesman = await Salesman.findOne({ userId: req.user._id });
     console.log('Found salesman:', salesman);
@@ -276,56 +319,61 @@ router.get('/salesman', auth, authorize('salesman'), async (req, res) => {
       });
     }
 
-    // Auto-sync ledger with orders and collections for salesman's territory
+    // Auto-sync ledger with orders and collections for salesman's territory (only once per minute)
     const LedgerEntry = require('../models/LedgerEntry');
-    const Collection = require('../models/Collection');
     try {
-      await LedgerEntry.syncWithOrders();
-      await LedgerEntry.syncWithCollections();
-      
-      // Additional sync for approved collections that might not have ledger entries
-      const territoryCustomers = await Customer.find({ territory: salesman.territory });
-      let createdEntries = 0;
-      
-      for (const customer of territoryCustomers) {
-        const approvedCollections = await Collection.find({ 
-          customerId: customer._id, 
-          status: { $in: ['approved', 'cleared'] } 
-        });
+      // Only sync if not recently done
+      const lastSyncKey = `sync_salesman_${req.user._id}`;
+      const lastSync = dashboardCache.get(lastSyncKey);
+      if (!lastSync || Date.now() - lastSync.timestamp > 300000) { // Increased to 5 minutes for production
+        await LedgerEntry.syncWithOrders();
+        await LedgerEntry.syncWithCollections();
         
-        for (const collection of approvedCollections) {
-          // Check if ledger entry already exists for this collection
-          const existingEntry = await LedgerEntry.findOne({
-            referenceId: collection._id,
-            referenceModel: 'Collection',
-            type: 'payment'
+        // Additional sync for approved collections that might not have ledger entries
+        const territoryCustomers = await Customer.find({ territory: salesman.territory });
+        let createdEntries = 0;
+        
+        for (const customer of territoryCustomers) {
+          const approvedCollections = await Collection.find({ 
+            customerId: customer._id, 
+            status: { $in: ['approved', 'cleared'] } 
           });
           
-          if (!existingEntry) {
-            // Create ledger entry for approved collection
-            const ledgerEntry = new LedgerEntry({
-              customerId: customer._id,
-              entryDate: collection.collectionDate || new Date(),
-              description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
-              type: 'payment',
-              amount: collection.amount,
-              reference: collection.collectionNumber || collection._id.toString(),
+          for (const collection of approvedCollections) {
+            // Check if ledger entry already exists for this collection
+            const existingEntry = await LedgerEntry.findOne({
               referenceId: collection._id,
               referenceModel: 'Collection',
-              createdBy: collection.createdBy
+              type: 'payment'
             });
-            await ledgerEntry.save();
-            createdEntries++;
-            console.log(`Auto-created ledger entry for salesman territory approved collection ${collection._id}`);
+            
+            if (!existingEntry) {
+              // Create ledger entry for approved collection
+              const ledgerEntry = new LedgerEntry({
+                customerId: customer._id,
+                entryDate: collection.collectionDate || new Date(),
+                description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
+                type: 'payment',
+                amount: collection.amount,
+                reference: collection.collectionNumber || collection._id.toString(),
+                referenceId: collection._id,
+                referenceModel: 'Collection',
+                createdBy: collection.createdBy
+              });
+              await ledgerEntry.save();
+              createdEntries++;
+            }
           }
         }
+        
+        if (createdEntries > 0) {
+          console.log(`Salesman auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
+        }
+        
+        // Update sync timestamp
+        dashboardCache.set(lastSyncKey, { timestamp: Date.now() });
+        console.log('Ledger auto-sync completed for salesman');
       }
-      
-      if (createdEntries > 0) {
-        console.log(`Salesman auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
-      }
-      
-      console.log('Ledger auto-sync completed for salesman');
     } catch (syncError) {
       console.error('Ledger auto-sync error:', syncError);
       // Continue with dashboard data even if sync fails
@@ -562,6 +610,10 @@ router.get('/salesman', auth, authorize('salesman'), async (req, res) => {
         customersWithOutstanding
       }
     };
+    
+    // Cache the response
+    setCachedDashboard(cacheKey, responseData);
+    
     console.log('Salesman dashboard response data:', responseData);
     res.json(responseData);
   } catch (error) {
@@ -578,6 +630,13 @@ router.get('/salesman', auth, authorize('salesman'), async (req, res) => {
 // @access  Private (Customer)
 router.get('/customer', auth, authorize('customer'), async (req, res) => {
   try {
+    // Check cache first
+    const cacheKey = `customer_${req.user._id}`;
+    const cached = getCachedDashboard(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const customer = await Customer.findOne({ userId: req.user._id })
       .populate('userId', 'name mobile');
 
@@ -588,52 +647,57 @@ router.get('/customer', auth, authorize('customer'), async (req, res) => {
       });
     }
 
-    // Auto-sync ledger with orders and collections for this customer
+    // Auto-sync ledger with orders and collections for this customer (only once per minute)
     const LedgerEntry = require('../models/LedgerEntry');
-    const Collection = require('../models/Collection');
     try {
-      await LedgerEntry.syncWithOrders();
-      await LedgerEntry.syncWithCollections();
-      
-      // Additional sync for approved collections that might not have ledger entries
-      const approvedCollections = await Collection.find({ 
-        customerId: customer._id, 
-        status: { $in: ['approved', 'cleared'] } 
-      });
-      
-      let createdEntries = 0;
-      for (const collection of approvedCollections) {
-        // Check if ledger entry already exists for this collection
-        const existingEntry = await LedgerEntry.findOne({
-          referenceId: collection._id,
-          referenceModel: 'Collection',
-          type: 'payment'
+      // Only sync if not recently done
+      const lastSyncKey = `sync_customer_${req.user._id}`;
+      const lastSync = dashboardCache.get(lastSyncKey);
+      if (!lastSync || Date.now() - lastSync.timestamp > 300000) { // Increased to 5 minutes for production
+        await LedgerEntry.syncWithOrders();
+        await LedgerEntry.syncWithCollections();
+        
+        // Additional sync for approved collections that might not have ledger entries
+        const approvedCollections = await Collection.find({ 
+          customerId: customer._id, 
+          status: { $in: ['approved', 'cleared'] } 
         });
         
-        if (!existingEntry) {
-          // Create ledger entry for approved collection
-          const ledgerEntry = new LedgerEntry({
-            customerId: customer._id,
-            entryDate: collection.collectionDate || new Date(),
-            description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
-            type: 'payment',
-            amount: collection.amount,
-            reference: collection.collectionNumber || collection._id.toString(),
+        let createdEntries = 0;
+        for (const collection of approvedCollections) {
+          // Check if ledger entry already exists for this collection
+          const existingEntry = await LedgerEntry.findOne({
             referenceId: collection._id,
             referenceModel: 'Collection',
-            createdBy: collection.createdBy
+            type: 'payment'
           });
-          await ledgerEntry.save();
-          createdEntries++;
-          console.log(`Auto-created ledger entry for customer approved collection ${collection._id}`);
+          
+          if (!existingEntry) {
+            // Create ledger entry for approved collection
+            const ledgerEntry = new LedgerEntry({
+              customerId: customer._id,
+              entryDate: collection.collectionDate || new Date(),
+              description: `Payment received: ${collection.paymentMode || 'Collection'} - ${collection.collectionNumber || collection._id.toString()}`,
+              type: 'payment',
+              amount: collection.amount,
+              reference: collection.collectionNumber || collection._id.toString(),
+              referenceId: collection._id,
+              referenceModel: 'Collection',
+              createdBy: collection.createdBy
+            });
+            await ledgerEntry.save();
+            createdEntries++;
+          }
         }
+        
+        if (createdEntries > 0) {
+          console.log(`Customer auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
+        }
+        
+        // Update sync timestamp
+        dashboardCache.set(lastSyncKey, { timestamp: Date.now() });
+        console.log('Ledger auto-sync completed for customer');
       }
-      
-      if (createdEntries > 0) {
-        console.log(`Customer auto-sync completed: Created ${createdEntries} ledger entries for approved collections`);
-      }
-      
-      console.log('Ledger auto-sync completed for customer');
     } catch (syncError) {
       console.error('Ledger auto-sync error:', syncError);
       // Continue with dashboard data even if sync fails
@@ -725,7 +789,7 @@ router.get('/customer', auth, authorize('customer'), async (req, res) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         profile: {
@@ -747,7 +811,12 @@ router.get('/customer', auth, authorize('customer'), async (req, res) => {
         recentOrders,
         monthlyOrders
       }
-    });
+    };
+
+    // Cache the response
+    setCachedDashboard(cacheKey, responseData);
+    
+    res.json(responseData);
   } catch (error) {
     console.error('Customer dashboard error:', error);
     res.status(500).json({

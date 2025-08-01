@@ -23,17 +23,26 @@ const AccountStatement: React.FC = () => {
         if (user.role === 'customer') {
           const res = await customersAPI.getMe();
           customerData = res.data;
+          console.log('Customer profile loaded:', customerData);
         } else {
           const res = await customersAPI.getById(user._id);
           customerData = res.data || res;
+          console.log('Customer profile loaded:', customerData);
         }
         setCustomer(customerData);
 
         // Get customer-specific ledger entries
-        const ledgerRes = await ledgerAPI.getAll();
-        if (ledgerRes.success && ledgerRes.data) {
-          setLedgerEntries(ledgerRes.data);
+        if (customerData?._id) {
+          const ledgerRes = await ledgerAPI.getByCustomer(customerData._id);
+          if (ledgerRes.success && ledgerRes.data?.entries) {
+            console.log('Customer ledger entries:', ledgerRes.data.entries);
+            setLedgerEntries(ledgerRes.data.entries);
+          } else {
+            console.log('No customer ledger entries found');
+            setLedgerEntries([]);
+          }
         } else {
+          console.log('No customer data found');
           setLedgerEntries([]);
         }
 
@@ -42,6 +51,7 @@ const AccountStatement: React.FC = () => {
         setDashboard(dashboardRes.data);
       } catch (err: any) {
         setError(err.message || 'Failed to load account statement');
+        console.error('Account statement error:', err);
       } finally {
         setLoading(false);
       }

@@ -19,6 +19,13 @@ const generateToken = (id) => {
 // @desc    Login user
 // @access  Public
 router.post('/login', async (req, res) => {
+  // Set cache control headers to prevent caching
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
   try {
     const { mobile, password } = req.body;
     console.log('Login attempt:', mobile, password);
@@ -166,6 +173,13 @@ router.post('/register', auth, validateUser, async (req, res) => {
 // @desc    Get current user
 // @access  Private
 router.get('/me', auth, async (req, res) => {
+  // Set cache control headers to prevent caching
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+
   try {
     let userData = req.user.toJSON();
     

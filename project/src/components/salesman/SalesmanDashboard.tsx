@@ -3,6 +3,7 @@ import { Users, ShoppingCart, DollarSign, Target, TrendingUp, MapPin, Calendar, 
 import { useAuth } from '../../contexts/AuthContext';
 import { dashboardAPI, ordersAPI, customersAPI, collectionsAPI, salesmenAPI } from '../../services/api';
 import { lazy, Suspense } from 'react';
+import LoadingSpinner from '../common/LoadingSpinner';
 
 // Lazy load components for better performance
 const TakeOrder = lazy(() => import('./TakeOrder'));
@@ -22,15 +23,29 @@ const SalesmanDashboard: React.FC = () => {
   const [salesmen, setSalesmen] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
+      // Set a timeout for the dashboard request
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Dashboard load timeout. Please try again.')), 10000) // Reduced to 10 seconds
+      );
+      
       // Load dashboard data first (most important)
-      const dashboardRes = await dashboardAPI.getSalesmanDashboard();
-      setDashboard(dashboardRes.data);
+      const dashboardPromise = dashboardAPI.getSalesmanDashboard();
+      const dashboardRes = await Promise.race([dashboardPromise, timeoutPromise]) as any;
+      
+      if (dashboardRes.success) {
+        setDashboard(dashboardRes.data);
+        setRetryCount(0); // Reset retry count on success
+      } else {
+        setError(dashboardRes.message || 'Failed to load dashboard');
+        return;
+      }
 
       // Load additional data in parallel with optimized queries
       const [orderRes, customerRes, collectionRes, salesmenRes] = await Promise.all([
@@ -47,25 +62,33 @@ const SalesmanDashboard: React.FC = () => {
     } catch (err: any) {
       console.error('Dashboard loading error:', err);
       setError(err.message || 'Failed to load dashboard');
+      
+      // Auto-retry on network errors (max 2 attempts, reduced from 3)
+      if (err.message.includes('Network error') || err.message.includes('timeout') && retryCount < 2) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadDashboardData();
+        }, 1000); // Reduced retry delay to 1 second
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [retryCount]);
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [loadDashboardData]);
 
-  // Auto-refresh when tab changes (with debounce)
+  // Auto-refresh when tab changes (but not for overview to avoid double loading)
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      loadDashboardData();
-    }, 100); // Small delay to prevent excessive calls
-    
-    return () => clearTimeout(timeoutId);
+    if (activeTab !== 'overview') {
+      const timeoutId = setTimeout(() => {
+        loadDashboardData();
+      }, 100); // Small delay to prevent excessive calls
+      
+      return () => clearTimeout(timeoutId);
+    }
   }, [activeTab, loadDashboardData]);
-  
-  // Performance: Removed excessive console.log statements
   
   // Memoized calculations for better performance
   const salesman = useMemo(() => 
@@ -155,37 +178,37 @@ const SalesmanDashboard: React.FC = () => {
     switch (activeTab) {
       case 'take-order':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading take order..." />}>
             <TakeOrder />
           </Suspense>
         );
       case 'collect-payment':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading collect payment..." />}>
             <CollectPayment />
           </Suspense>
         );
       case 'customer-visits':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading customer visits..." />}>
             <CustomerVisits />
           </Suspense>
         );
       case 'products':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading product management..." />}>
             <SalesmanProductManagement />
           </Suspense>
         );
       case 'sales-report':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading sales report..." />}>
             <SalesReport />
           </Suspense>
         );
       case 'ledger':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading ledger..." />}>
             <SalesmanLedger />
           </Suspense>
         );
@@ -212,26 +235,8 @@ const SalesmanDashboard: React.FC = () => {
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
                 <button
-                  onClick={async () => {
-                    setLoading(true);
-                    try {
-                      const [orderRes, customerRes, salesmenRes, dashboardRes] = await Promise.all([
-                        ordersAPI.getAll(),
-                        customersAPI.getAll(),
-                        salesmenAPI.getAll(),
-                        dashboardAPI.getSalesmanDashboard()
-                      ]);
-                      setOrders(orderRes.data || []);
-                      setCustomers(customerRes.data || []);
-                      setSalesmen(salesmenRes.data || []);
-                      setDashboard(dashboardRes.data);
-                    } catch (err) {
-                      setError('Failed to refresh data');
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  className="mb-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={loadDashboardData}
+                  className="mb-2 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                 >
                   Refresh Data
                 </button>
@@ -356,10 +361,27 @@ const SalesmanDashboard: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-10">Loading salesman dashboard...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading salesman dashboard..." fast={true} />
+      </div>
+    );
   }
+  
   if (error) {
-    return <div className="text-center py-10 text-red-600">{error}</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-lg mb-4">{error}</div>
+          <button 
+            onClick={loadDashboardData}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

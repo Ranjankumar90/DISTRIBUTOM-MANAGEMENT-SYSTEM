@@ -1,24 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Phone, Lock } from 'lucide-react';
 import BusinessLogo from './common/BusinessLogo';
+import LoadingSpinner from './common/LoadingSpinner';
 
 const Login: React.FC = () => {
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
-  const { login, isLoading, error } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login, error } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!mobile || !password) {
+    if (!mobile || !password || isSubmitting) {
       return;
     }
 
-    await login(mobile, password);
-  };
+    setIsSubmitting(true);
+    try {
+      // Clear any existing cache before login
+      localStorage.removeItem('userCache');
+      sessionStorage.clear();
+      
+      const success = await login(mobile, password);
+      
+      if (success) {
+        // Force a small delay to ensure state updates
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Force refresh to ensure clean state
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [mobile, password, isSubmitting, login]);
 
-
+  const isLoading = isSubmitting;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -42,6 +63,7 @@ const Login: React.FC = () => {
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter mobile number"
                 disabled={isLoading}
+                autoComplete="tel"
               />
             </div>
           </div>
@@ -59,6 +81,7 @@ const Login: React.FC = () => {
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter password"
                 disabled={isLoading}
+                autoComplete="current-password"
               />
             </div>
           </div>
@@ -76,16 +99,14 @@ const Login: React.FC = () => {
           >
             {isLoading ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Signing In...
+                <LoadingSpinner size="sm" color="text-white" text="" />
+                <span className="ml-2">Signing In...</span>
               </>
             ) : (
               'Sign In'
             )}
           </button>
         </form>
-
-
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:50
 
 // Simple cache for API responses
 const cache = new Map();
-const CACHE_DURATION = 30000; // 30 seconds
+const CACHE_DURATION = 60000; // Increased to 1 minute for production
 
 const getCachedResponse = (key: string) => {
   const cached = cache.get(key);
@@ -45,32 +45,61 @@ const apiRequest = async (endpoint: string, config: RequestInit = {}) => {
     }
   }
 
-  const response = await fetch(url, {
-    ...config,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...config.headers,
-    },
-  });
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000); // Increased to 20 seconds for production
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Network error' }));
-    throw new Error(error.message || `HTTP error! status: ${response.status}`);
-  }
+  try {
+    const response = await fetch(url, {
+      ...config,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...config.headers,
+      },
+    });
 
-  const data = await response.json();
-  
-  // Cache GET responses
-  if (!config.method || config.method === 'GET') {
-    setCachedResponse(url, data);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Network error' }));
+      throw new Error(error.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Cache GET responses
+    if (!config.method || config.method === 'GET') {
+      setCachedResponse(url, data);
+    }
+    
+    return data;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout. Please try again.');
+    }
+    
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error('Network error. Please check your connection.');
+    }
+    
+    throw error;
   }
-  
-  return data;
+};
+
+export const healthAPI = {
+  check: async () => {
+    return apiRequest('/health');
+  },
 };
 
 export const authAPI = {
   login: async (mobile: string, password: string) => {
+    // Clear cache on login
+    clearCache();
     return apiRequest('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ mobile, password }),
@@ -307,6 +336,19 @@ export const ledgerAPI = {
 
   getByCustomer: async (customerId: string) => {
     return apiRequest(`/ledger/customer/${customerId}`);
+  },
+
+  update: async (id: string, ledgerData: any) => {
+    return apiRequest(`/ledger/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(ledgerData),
+    });
+  },
+
+  delete: async (id: string) => {
+    return apiRequest(`/ledger/${id}`, {
+      method: 'DELETE',
+    });
   },
 };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ShoppingCart, Package, Clock, CheckCircle, TrendingUp, CreditCard, FileText, Phone } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { lazy, Suspense } from 'react';
+import LoadingSpinner from '../common/LoadingSpinner';
 
 // Lazy load components for better performance
 const PlaceOrder = lazy(() => import('./PlaceOrder'));
@@ -17,19 +18,41 @@ const CustomerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<any>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await dashboardAPI.getCustomerDashboard();
-      setDashboard(res.data);
+      // Set a timeout for the dashboard request
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Dashboard load timeout. Please try again.')), 10000) // Reduced to 10 seconds
+      );
+      
+      const dashboardPromise = dashboardAPI.getCustomerDashboard();
+      const res = await Promise.race([dashboardPromise, timeoutPromise]) as any;
+      
+      if (res.success) {
+        setDashboard(res.data);
+        setRetryCount(0); // Reset retry count on success
+      } else {
+        setError(res.message || 'Failed to load dashboard');
+      }
     } catch (err: any) {
+      console.error('Dashboard load error:', err);
       setError(err.message || 'Failed to load dashboard');
+      
+      // Auto-retry on network errors (max 2 attempts, reduced from 3)
+      if (err.message.includes('Network error') || err.message.includes('timeout') && retryCount < 2) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          loadDashboardData();
+        }, 1000); // Reduced retry delay to 1 second
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [retryCount]);
 
   const loadCustomerData = useCallback(async () => {
     if (!user?._id) return;
@@ -37,19 +60,22 @@ const CustomerDashboard: React.FC = () => {
       const res = await customersAPI.getMe();
       setCustomer(res.data);
     } catch (err: any) {
-      setError(err.message || 'Failed to load customer');
+      console.error('Customer load error:', err);
+      // Don't set error for customer data as it's not critical
     }
   }, [user?._id]);
 
   useEffect(() => {
     loadDashboardData();
     loadCustomerData();
-  }, []);
+  }, [loadDashboardData, loadCustomerData]);
 
-  // Auto-refresh when tab changes
+  // Auto-refresh when tab changes (but not for overview to avoid double loading)
   useEffect(() => {
-    loadDashboardData();
-    loadCustomerData();
+    if (activeTab !== 'overview') {
+      loadDashboardData();
+      loadCustomerData();
+    }
   }, [activeTab]);
   
   const stats = useMemo(() => [
@@ -90,19 +116,19 @@ const CustomerDashboard: React.FC = () => {
     switch (activeTab) {
       case 'place-order':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading place order..." />}>
             <PlaceOrder customer={customer} />
           </Suspense>
         );
       case 'order-history':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading order history..." />}>
             <OrderHistory />
           </Suspense>
         );
       case 'account':
         return (
-          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+          <Suspense fallback={<LoadingSpinner size="md" text="Loading account statement..." />}>
             <AccountStatement />
           </Suspense>
         );
@@ -188,10 +214,27 @@ const CustomerDashboard: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-10">Loading customer...</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading customer dashboard..." fast={true} />
+      </div>
+    );
   }
+  
   if (error) {
-    return <div className="text-center py-10 text-red-600">{error}</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-lg mb-4">{error}</div>
+          <button 
+            onClick={loadDashboardData}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
