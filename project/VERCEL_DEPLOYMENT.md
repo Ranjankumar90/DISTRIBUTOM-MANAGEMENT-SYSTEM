@@ -67,17 +67,17 @@ Ensure Node.js 18+ is used:
 
 ### **Common Issues:**
 
-1. **Rollup Module Error:**
+1. **Runtime Error:**
+   - Fixed by removing invalid functions section
+   - Simplified vercel.json configuration
+
+2. **Rollup Module Error:**
    - Fixed with `.npmrc` configuration
    - Uses `--legacy-peer-deps` flag
 
-2. **TypeScript Errors:**
-   - Updated `package.json` build script
-   - Added proper TypeScript configuration
-
-3. **Dependency Conflicts:**
-   - Simplified dependencies in `package.json`
-   - Removed conflicting packages
+3. **Missing Dependencies:**
+   - Added axios, html2canvas, jspdf
+   - Updated package.json with required packages
 
 ## 📊 **Expected Result:**
 
