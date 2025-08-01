@@ -48,19 +48,28 @@ const allowedOrigins = [
 ];
 
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    console.log('🛰️ CORS origin request:', origin); // Optional for debugging
+    if (!origin) return callback(null, true); // allow curl, mobile apps
+
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ Allowed by CORS:', origin);
+      return callback(null, true);
     }
+
+    console.log('❌ Blocked by CORS:', origin);
+    callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
-}));
+  credentials: true,
+};
+
+// Apply CORS to all routes
+app.use(cors(corsOptions));
+
+// 🔥 Handle preflight requests
+app.options('*', cors(corsOptions));
+
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
